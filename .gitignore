@@ -1,0 +1,16 @@
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+.kotlin/
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+out/
+
+# OS
+.DS_Store
+
+# Local secrets
+.env
+*.local.yaml

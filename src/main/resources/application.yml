@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: mychecklist-api
+
+  datasource:
+    # Local defaults match docker-compose.yml. Override with env vars elsewhere
+    # (e.g. Neon: jdbc:postgresql://<host>/<db>?sslmode=require).
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/mychecklist}
+    username: ${DB_USERNAME:mychecklist}
+    password: ${DB_PASSWORD:mychecklist}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema. Hibernate only checks that entities match it,
+      # and refuses to start if they don't.
+      ddl-auto: validate
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Firebase ID tokens are signed JWTs. These settings make Spring verify the
+          # signature, issuer, audience and expiry of every Authorization: Bearer token.
+          issuer-uri: https://securetoken.google.com/${app.firebase-project-id}
+          jwk-set-uri: https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com
+          audiences: ${app.firebase-project-id}
+
+app:
+  firebase-project-id: ${FIREBASE_PROJECT_ID:your-firebase-project-id}
+  # Comma-separated. Accounts with these (verified) emails become SUPER_ADMIN on sign-in;
+  # everyone else is USER. This setting is the source of truth for the role.
+  super-admin-emails: ${APP_SUPER_ADMIN_EMAILS:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true  # /actuator/health/liveness and /readiness for Kubernetes
