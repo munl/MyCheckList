@@ -5,7 +5,7 @@ metadata:
   namespace: mychecklist
 data:
   DB_URL: jdbc:postgresql://postgres:5432/mychecklist
-  FIREBASE_PROJECT_ID: your-firebase-project-id   # <-- change me
+  FIREBASE_PROJECT_ID: mychecklist-e745d
   APP_SUPER_ADMIN_EMAILS: ""                       # <-- your Google account email
 ---
 apiVersion: apps/v1

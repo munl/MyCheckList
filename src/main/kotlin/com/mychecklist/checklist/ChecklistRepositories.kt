@@ -8,6 +8,19 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.util.UUID
 
+/** Query result: number of members in one checklist. */
+interface ChecklistMemberCount {
+    val checklistId: UUID
+    val total: Long
+}
+
+/** Query result: total and completed items in one checklist. */
+interface ChecklistItemCount {
+    val checklistId: UUID
+    val total: Long
+    val completed: Long
+}
+
 interface ChecklistRepository : JpaRepository<Checklist, UUID> {
 
     /** Checklists the user is a member of (any role), excluding archived ones. */
@@ -20,10 +33,46 @@ interface ChecklistRepository : JpaRepository<Checklist, UUID> {
         """,
     )
     fun findActiveForUser(@Param("userId") userId: UUID): List<Checklist>
+
+    /** Archived checklists the user is a member of. */
+    @Query(
+        """
+        select c from Checklist c
+        where c.archivedAt is not null
+          and exists (select 1 from ChecklistMember m where m.id.checklistId = c.id and m.id.userId = :userId)
+        order by c.archivedAt desc
+        """,
+    )
+    fun findArchivedForUser(@Param("userId") userId: UUID): List<Checklist>
+
+    @Query(
+        """
+        select m.id.checklistId as checklistId, count(*) as total
+        from ChecklistMember m
+        where m.id.checklistId in :ids
+        group by m.id.checklistId
+        """,
+    )
+    fun countMembers(@Param("ids") ids: Collection<UUID>): List<ChecklistMemberCount>
+
+    @Query(
+        """
+        select i.checklistId as checklistId, count(*) as total, count(i.completedAt) as completed
+        from ChecklistItem i
+        where i.checklistId in :ids
+        group by i.checklistId
+        """,
+    )
+    fun countItems(@Param("ids") ids: Collection<UUID>): List<ChecklistItemCount>
 }
 
 interface ChecklistMemberRepository : JpaRepository<ChecklistMember, ChecklistMemberId> {
     fun findByIdChecklistId(checklistId: UUID): List<ChecklistMember>
+
+    /** All of one user's memberships (to show their role on each list). */
+    fun findByIdUserId(userId: UUID): List<ChecklistMember>
+
+    fun countByIdUserIdAndRole(userId: UUID, role: MemberRole): Long
 }
 
 interface ChecklistInvitationRepository : JpaRepository<ChecklistInvitation, UUID> {

@@ -51,7 +51,7 @@ The schema lives in [`src/main/resources/db/migration`](src/main/resources/db/mi
 
 1. **Docker Desktop:** install it, then go to *Settings → Kubernetes → Enable Kubernetes*.
 2. **JDK 21** (only needed to run the app outside Docker, e.g. from IntelliJ). Android Studio's bundled JBR 21 works, or you can run `brew install --cask temurin@21`.
-3. **Firebase:** in the [Firebase console](https://console.firebase.google.com), create a project and enable *Authentication → Sign-in method → Google*. Then copy the **Project ID** from *Project settings*.
+3. **Firebase:** (project `mychecklist-e745d` is already the default in config) in the [Firebase console](https://console.firebase.google.com), create a project and enable *Authentication → Sign-in method → Google*. Then copy the **Project ID** from *Project settings*.
 
 The server doesn't need a Firebase service account. It checks each Firebase ID token against Google's public keys.
 
@@ -104,6 +104,14 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/admin/users   #
 | `GET /actuator/health` | public | Kubernetes probes use `/liveness` and `/readiness` |
 | `GET /api/me` | any user | Creates your user row on first call |
 | `GET /api/admin/users` | super admin | |
+| `POST /api/checklists` | any user | Creates a list; you become OWNER |
+| `GET /api/checklists[?archived=true]` | any user | Lists you're a member of |
+| `GET /api/checklists/{id}` | viewer+ | |
+| `PATCH /api/checklists/{id}` | editor+ | `title`, `description` |
+| `POST /api/checklists/{id}/archive` · `/unarchive` | owner | Archived lists are read-only |
+| `DELETE /api/checklists/{id}?confirm=true` | owner | Permanent |
+
+Errors come back as [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) JSON (`status`, `title`, `detail`). If you aren't a member of a list, you get **404**, the same as for a list that doesn't exist. If your role is too low, you get **403**.
 
 ## Super admin
 

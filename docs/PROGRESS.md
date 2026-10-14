@@ -7,11 +7,12 @@ Last updated: 2026-10-14
 
 ## Status
 
-The foundation is built and pushed. `./gradlew test` passes 3 of 3 tests on Jian's Mac. There are no checklist endpoints yet.
+The authorization layer and checklists API are done. `./gradlew test` passes 14 of 14 tests on Jian's Mac.
 
 - **Repo:** [github.com/munl/MyCheckList](https://github.com/munl/MyCheckList), branch `main`
 - **Done:** database schema, Firebase sign-in, user records, the super admin role, Docker and Kubernetes setup
-- **Next:** the checklist endpoints (create, list mine, get, rename, archive), with permission checks and tests
+- **Firebase project ID:** `mychecklist-e745d` (the default in config)
+- **Next:** Members and invitations API
 
 ## Decisions made
 
@@ -27,6 +28,9 @@ The foundation is built and pushed. `./gradlew test` passes 3 of 3 tests on Jian
 | Completion | V1 uses `ANY`: the first assignee to check an item off completes it for everyone | `EACH` (everyone checks off their own copy) can be added later |
 | List roles | Owner (one per list), Editor, Viewer | |
 | Super admin | `users.platform_role = SUPER_ADMIN`, set from the `APP_SUPER_ADMIN_EMAILS` setting; requires a verified email; changes are written to `admin_audit_log` | The role can't be granted through the API |
+| Architecture | A modular monolith: one Spring Boot app and one database, with code grouped by feature (`user/`, `checklist/`, `admin/`) | The data is tightly linked, so splitting it into services gains nothing at this scale. To scale up, add replicas. A separate notifications worker is the first candidate to pull out later |
+| Permissions | All checklist access goes through `ChecklistAccessService.requireAccess(...)`. Non-member: 404. Role too low: 403. Archived list: 409 on writes | One place to get right; IDs can't be probed |
+| Errors | RFC 7807 `ProblemDetail` JSON. No stack traces, SQL or exception messages | Consistent for clients; doesn't leak internals |
 
 ## Data model
 
@@ -71,14 +75,21 @@ The source code is under `src/main/kotlin/com/mychecklist/`.
 | `user/User.kt`, `UserRepository.kt` | The `users` table and its queries, including a create-if-missing insert that's safe when two requests arrive at once |
 | `user/UserService.kt` | Turns a verified token into a user row, and keeps the name, photo and super admin role in sync |
 | `user/MeController.kt` | `GET /api/me` |
+| `user/CurrentUser.kt` | `@CurrentUser user: User` controller parameter: the signed-in user's row, synced from the token |
+| `common/ApiExceptions.kt`, `ApiExceptionHandler.kt` | `NotFound` / `Forbidden` / `Conflict` / `BadRequest` exceptions, turned into problem JSON |
+| `checklist/ChecklistAccessService.kt` | **The permission check.** Every checklist, member, invite and item operation must call `requireAccess` |
+| `checklist/ChecklistService.kt`, `ChecklistController.kt`, `ChecklistDtos.kt` | The checklists API |
+| `admin/AdminAuditService.kt` | Writes `admin_audit_log` rows when a super admin changes someone else's data |
 | `checklist/ChecklistEntities.kt` | Entities for checklists, members, invitations, items and assignees |
 | `checklist/ChecklistRepositories.kt` | Database queries, including `completeIfOpen` (first one wins) and "my lists" |
 | `admin/AdminController.kt`, `AdminAuditLog.kt` | `GET /api/admin/users` and the audit log entity |
-| `src/test/.../SchemaAndUserSyncTest.kt` | 3 tests against a real Postgres that Testcontainers starts |
+| `src/test/.../SchemaAndUserSyncTest.kt` | Schema, user sync and "first one wins" tests |
+| `src/test/.../ChecklistApiTest.kt` | API tests: owner, editor, viewer, outsider, super admin, archived lists, validation, 401 |
 | `Dockerfile` | Two-stage build: compile with a JDK, then run on a slim JRE as a non-root user |
 | `docker-compose.yml` | Local Postgres 17, plus the API in Docker if you want it |
 | `k8s/` | Namespace, Postgres StatefulSet, API Deployment and NodePort service on port 30080; apply with `kubectl apply -k k8s/` |
 | `docs/PROGRESS.md` | This file |
+| `scripts/create-github-issues.sh` | Creates the V1 backlog as GitHub issues (`gh` CLI) |
 
 **Endpoints so far**
 
@@ -87,6 +98,12 @@ The source code is under `src/main/kotlin/com/mychecklist/`.
 | `GET /actuator/health` (plus `/liveness` and `/readiness`) | Anyone |
 | `GET /api/me` | Any signed-in user; the first call creates their user row |
 | `GET /api/admin/users` | Super admin only |
+| `POST /api/checklists` | Any signed-in user (they become OWNER) |
+| `GET /api/checklists` (`?archived=true`) | Any user; returns only lists they're a member of |
+| `GET /api/checklists/{id}` | VIEWER or higher |
+| `PATCH /api/checklists/{id}` | EDITOR or higher |
+| `POST /api/checklists/{id}/archive` and `/unarchive` | OWNER |
+| `DELETE /api/checklists/{id}?confirm=true` | OWNER |
 
 ## How to run it
 
@@ -113,15 +130,17 @@ curl http://localhost:30080/actuator/health
 
 To call the API, get an ID token in the app with `Firebase.auth.currentUser?.getIdToken(false)`, then send it as `Authorization: Bearer <token>`.
 
-**Still to set up:** a Firebase project with Google sign-in turned on, and its Project ID in `FIREBASE_PROJECT_ID`.
+**Firebase:** the project ID `mychecklist-e745d` is now the default, so there's no need to export `FIREBASE_PROJECT_ID` locally. Jian is setting up Google sign-in in that project.
 
 ## Roadmap
 
 - [x] Plan the data model and roles
 - [x] Scaffold the project: schema, auth, Docker, Kubernetes, tests
 - [x] Push to GitHub
-- [ ] Set up the Firebase project and test `/api/me` with a real token
-- [ ] **Checklists API:** create, list mine, get, rename, archive
+- [ ] Set up the Firebase project and test `/api/me` with a real token (in progress; project ID added to config)
+- [x] **Authorization layer:** `ChecklistAccessService`, `@CurrentUser`, problem-detail errors, validation, admin audit
+- [x] **Checklists API:** create, list mine, get, rename, archive, unarchive, delete
+- [x] Run `./gradlew test`: 14 of 14 pass
 - [ ] **Members and invites API:** invite by email, invite inbox, accept or decline, revoke, change role, remove member, leave a list
 - [ ] **Items API:** add, edit, reorder, assign and unassign, complete and reopen, filter by assignee
 - [ ] **Admin API:** edit or delete anything, with every change written to the audit log
@@ -138,4 +157,5 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 
 | Date | What was done |
 | --- | --- |
+| 2026-10-14 (later) | Decided on a modular monolith and reviewed security. Added the authorization layer: one permission check, 404 for outsiders, 403 for low roles, archived lists read-only, super admin audited. Added problem-detail error handling, the `@CurrentUser` resolver and the checklists API, with 10 API tests and a role-order unit test; all 14 tests pass. Set the Firebase project ID (`mychecklist-e745d`). Wrote `scripts/create-github-issues.sh` (backlog; GitHub tickets are on hold for now) |
 | 2026-10-14 | Planned the schema and roles, and added the super admin role. Scaffolded the Spring Boot project and checked the SQL constraints against Postgres 16. Installed Docker; `./gradlew test` passes 3 of 3. Pushed the initial commit to `munl/MyCheckList` on `main`. Added this progress file |

@@ -27,7 +27,7 @@ services:
       DB_URL: jdbc:postgresql://db:5432/mychecklist
       DB_USERNAME: mychecklist
       DB_PASSWORD: mychecklist
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-your-firebase-project-id}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-mychecklist-e745d}
       APP_SUPER_ADMIN_EMAILS: ${APP_SUPER_ADMIN_EMAILS:-}
     ports:
       - "8080:8080"

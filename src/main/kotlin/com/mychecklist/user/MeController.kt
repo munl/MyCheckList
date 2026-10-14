@@ -1,7 +1,5 @@
 package com.mychecklist.user
 
-import org.springframework.security.core.annotation.AuthenticationPrincipal
-import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -23,10 +21,9 @@ data class UserResponse(
 
 @RestController
 @RequestMapping("/api/me")
-class MeController(private val userService: UserService) {
+class MeController {
 
     /** The app calls this right after Firebase sign-in to create/fetch its user profile. */
     @GetMapping
-    fun me(@AuthenticationPrincipal jwt: Jwt): UserResponse =
-        UserResponse.from(userService.syncFromToken(jwt))
+    fun me(@CurrentUser user: User): UserResponse = UserResponse.from(user)
 }

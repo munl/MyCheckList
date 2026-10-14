@@ -20,7 +20,15 @@ import java.util.UUID
 // Foreign keys are mapped as plain UUID fields rather than JPA relationships.
 // This keeps queries explicit and avoids lazy-loading surprises; join in repositories as needed.
 
-enum class MemberRole { OWNER, EDITOR, VIEWER }
+/** Roles inside one checklist. `rank` orders them: VIEWER < EDITOR < OWNER. */
+enum class MemberRole(val rank: Int) {
+    VIEWER(1),
+    EDITOR(2),
+    OWNER(3),
+    ;
+
+    fun atLeast(minimum: MemberRole): Boolean = rank >= minimum.rank
+}
 
 enum class InvitationStatus { PENDING, ACCEPTED, DECLINED, REVOKED, EXPIRED }
 
