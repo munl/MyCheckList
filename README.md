@@ -4,6 +4,8 @@ The backend for a shared checklist app. Users sign in with Google through Fireba
 
 **Stack:** Kotlin · Spring Boot 4 · PostgreSQL · Flyway · Docker · Kubernetes
 
+**Progress, decisions and next steps:** [docs/PROGRESS.md](docs/PROGRESS.md)
+
 ---
 
 ## Data model
