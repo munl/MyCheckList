@@ -16,6 +16,7 @@ The backend for a shared checklist app. Users sign in with Google through Fireba
 - **Repeating lists** can be daily, weekly, monthly, every N days/weeks/months, on chosen weekdays (e.g. Mon, Wed, Sat), monthly on a date or on the "last Friday", and can end on a date or after N times.
 - A "day" ends at **midnight in the list's time zone**. Then the occurrence closes and items from that day can't be ticked any more. Template edits apply from the next occurrence.
 - **Stars (repeating lists only):** you earn them the moment every item assigned to you that day is done. If someone helps by ticking your item, it still counts. Streak tiers raise the reward (1★ up to 4★), and a **team bonus** (+1★ to +3★) is added when everyone finishes. Results are settled at midnight.
+- **Storage stays small:** a day's copy is only created when someone opens the list. Item-level detail is kept for 90 days, then compacted to per-person summaries. Repeating lists nobody opens for 14 days pause themselves. Both numbers are in `application.yml`.
 - **Rewards:** owners and editors create rewards (title, description, star cost). Members request one, their stars are held, and another owner or editor approves or rejects it.
 
 Full rules, tiers and examples: [docs/PROGRESS.md](docs/PROGRESS.md#stars-and-rewards).

@@ -45,6 +45,10 @@ class Checklist(
     @Column(name = "team_last_completed_date")
     var teamLastCompletedDate: LocalDate? = null
 
+    /** Last time anyone opened the list or ticked an item. Drives auto-pause of repeating lists. */
+    @Column(name = "last_activity_at", nullable = false)
+    var lastActivityAt: Instant = Instant.now()
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant? = null

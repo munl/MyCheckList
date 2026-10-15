@@ -35,6 +35,13 @@ app:
   # Comma-separated. Accounts with these (verified) emails become SUPER_ADMIN on sign-in;
   # everyone else is USER. This setting is the source of truth for the role.
   super-admin-emails: ${APP_SUPER_ADMIN_EMAILS:}
+  history:
+    # Days to keep full item-level detail of past occurrences. Older days are compacted
+    # to per-person summaries (counts + stars). Raise this later if storage allows.
+    full-detail-days: ${APP_HISTORY_FULL_DETAIL_DAYS:90}
+  schedule:
+    # Pause a repeating list after this many days with nobody opening it.
+    auto-pause-after-days: ${APP_SCHEDULE_AUTO_PAUSE_AFTER_DAYS:14}
 
 server:
   error:

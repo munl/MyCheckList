@@ -9,7 +9,7 @@ Last updated: 2026-10-15
 
 The database now supports **repeating lists, stars, streaks and rewards**. The schema is done, and the entities match it. The APIs for these features haven't been built yet.
 
-`./gradlew test` passed 14 of 14 tests before this change. The new schema passed 16 of 16 tests. The code was then reorganized by feature, which **needs one more `./gradlew test` run**.
+`./gradlew test` passed 14 of 14 tests before this change. The new schema passed 16 of 16 tests. The code was then reorganized by feature, and storage controls were added to the schema. **Both need a `./gradlew test` run.**
 
 - **Repo:** [github.com/munl/MyCheckList](https://github.com/munl/MyCheckList), branch `main`
 - **Firebase project ID:** `mychecklist-e745d` (the default in config)
@@ -18,7 +18,7 @@ The database now supports **repeating lists, stars, streaks and rewards**. The s
 
 ### Pick up here
 
-1. Run `./gradlew test` after the package reorganization, fix anything that fails, then commit and push.
+1. Run `./gradlew test` (after the package reorganization and storage-control columns), fix anything that fails, then commit and push.
 2. Build the **Members API**: list members, change role (EDITOR ⇄ VIEWER), remove a member, leave a list, transfer ownership. The owner can't be removed or demoted directly.
 3. Build the **Invitations API**: invite by email (EDITOR+, and only the OWNER can invite editors), the inbox at `/api/me/invitations`, accept or decline, revoke, expiry. Responses must not reveal whether an email has an account.
 4. Build the **Schedule, Items and Occurrences API**. See [Repeating lists](#repeating-lists) and [Stars and rewards](#stars-and-rewards) below for the rules.
@@ -62,6 +62,10 @@ No real database has been created yet. `./gradlew test` uses a temporary Postgre
 | Rewards | Per list. Owners **and editors** create, edit and remove them, and can change the star cost at any time. Redemptions are unlimited | |
 | Redeeming | A member requests it, stars are **held** straight away, and an owner or editor approves (stars spent) or rejects (stars refunded). **You can't approve your own request** unless you're the only owner or editor | Prevents spending the same stars twice, and self-approval |
 | Adjustments | Owners and editors can add or remove stars by hand, **with a reason**; every change is in the star ledger | Balances can always be explained |
+| Storage growth | Grows **linearly**: about 0.5 KB per item per day it's due, so a 10-item daily list is about 2 MB a year. Kept in check three ways (below) | Neon's free plan has 1 GB per project; that lasts years at family scale, about 1 year at 1,000 active users |
+| Lazy occurrences | A day's copy is created **only when someone opens or ticks the list**. A due day with no copy counts as missed, worked out from the schedule | Abandoned lists cost no storage |
+| History compaction | After **90 days** (`app.history.full-detail-days`), a nightly job deletes that day's item copies but keeps the per-person results, the list totals (`item_count`, `completed_item_count`) and the star ledger | Cuts history storage by ~90%. The 90 days can be raised later |
+| Auto-pause | Repeating lists that nobody has opened for **14 days** (`app.schedule.auto-pause-after-days`) are paused: no new days, and missed days don't break streaks. Opening the list resumes it | No growth from lists people stopped using |
 
 ## Data model
 
@@ -135,7 +139,7 @@ The weekday bits are Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64. In Kotl
 
 **Lifecycle of an occurrence**
 
-1. **Created** when someone first opens the list on a due day, or by a scheduled job just after midnight in the list's time zone. Items and assignees are copied from the template.
+1. **Created lazily**, the first time someone opens or ticks the list on a due day. Items and assignees are copied from the template. No one opens it means no row; the day still counts as missed for streaks.
 2. **Open:** items are ticked. Stars are awarded instantly when a person's last item is done, and voided if an item is unticked.
 3. **Closed** at `due_at` (the next midnight in the list's zone) by a scheduled job, which settles the results:
    - Each person who finished: their streak goes up by 1.
@@ -143,6 +147,9 @@ The weekday bits are Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64. In Kotl
    - People with no items: no change.
    - Team streak: +1 if everyone with items finished, otherwise reset to 0.
 4. Closed occurrences are read-only history.
+5. **Compacted** after 90 days: the item copies are deleted and `compacted_at` is set. The occurrence row (with `item_count` and `completed_item_count`), the member results and the star ledger stay.
+
+Opening a list or ticking an item updates `checklists.last_activity_at`. If a repeating list has had no activity for 14 days, `checklist_schedules.paused_at` is set and no occurrences are created until someone opens it again.
 
 ## Stars and rewards
 
@@ -248,7 +255,8 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 - [ ] **Invitations API:** invite by email, inbox, accept or decline, revoke
 - [ ] **Schedule API:** set, change or remove a list's repeat rule, and preview its next dates
 - [ ] **Items and Occurrences API:** template items (add, edit, reorder, assign); today's occurrence (get or create, tick and untick, "my items" and "unassigned" filters); history
-- [ ] **Stars engine:** instant awards and voids, streak and team-bonus tiers from config, a midnight job that closes occurrences and settles streaks
+- [ ] **Stars engine:** instant awards and voids, streak and team-bonus tiers from config, a midnight job that closes occurrences and settles streaks (including due days with no occurrence = missed, and paused days = skipped)
+- [ ] **Housekeeping jobs:** nightly compaction of occurrences older than 90 days; auto-pause repeating lists inactive for 14 days
 - [ ] **Rewards API:** create, edit, change cost, deactivate, delete; request, approve, reject, cancel redemptions; manual adjustments; star history
 - [ ] **Admin API:** edit or delete anything, with every change written to the audit log
 - [ ] CI (GitHub Actions) and Dependabot
@@ -267,6 +275,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 
 | Date | What was done |
 | --- | --- |
+| 2026-10-15 (evening) | Reviewed storage growth (it's linear, about 2 MB per year for a 10-item daily list). Agreed on three ways to keep it down: lazy occurrences, compacting history after 90 days, and auto-pausing lists after 14 days without activity. Schema: `checklists.last_activity_at`, `checklist_schedules.paused_at`, and `item_count`, `completed_item_count` and `compacted_at` on occurrences. Config: `app.history.full-detail-days=90`, `app.schedule.auto-pause-after-days=14`. V1 was edited in place again, since there's still no persistent database |
 | 2026-10-15 (later) | Confirmed the new schema: 16 of 16 tests pass. Reorganized the code by feature, with `api/`, `domain/` and `data/` subfolders and one entity per file (25 files became 57; no logic changed). Moved the Testcontainers setup to `src/test/.../support/` |
 | 2026-10-15 | Designed repeating lists, stars, streaks, a team bonus and rewards with Jian. Every list became a template plus per-period occurrences, with a schedule table following RFC 5545. Added a star ledger, cached balances and streaks, rewards and redemptions (stars held, owners or editors approve, no self-approval). Rewrote V1 in place, since no real database exists yet. Checked every new constraint against Postgres 16. Updated the entities and tests (16 total, not yet run). Removed `completion_mode` (it may come back as `EACH` in a later migration). The checklist response now has `timeZone` and no longer has `completedItemCount` |
 | 2026-10-14 (later) | Decided on a modular monolith and reviewed security. Added the authorization layer, problem-detail errors, `@CurrentUser` and the checklists API; 14 of 14 tests pass. Set the Firebase project ID. Wrote `scripts/create-github-issues.sh` |

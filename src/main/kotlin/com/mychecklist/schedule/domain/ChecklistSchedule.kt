@@ -64,6 +64,13 @@ class ChecklistSchedule(
     @Column(name = "max_occurrences")
     var maxOccurrences: Int? = null,
 ) {
+    /**
+     * Set when the list is auto-paused for inactivity: no new occurrences, and missed days
+     * while paused don't break streaks. Cleared when someone opens the list again.
+     */
+    @Column(name = "paused_at")
+    var pausedAt: Instant? = null
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant? = null

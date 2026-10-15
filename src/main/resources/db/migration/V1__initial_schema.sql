@@ -44,6 +44,9 @@ CREATE TABLE checklists (
     team_current_streak      integer NOT NULL DEFAULT 0 CHECK (team_current_streak >= 0),
     team_longest_streak      integer NOT NULL DEFAULT 0 CHECK (team_longest_streak >= 0),
     team_last_completed_date date,
+    -- Last time anyone opened the list or ticked an item. Repeating lists nobody has
+    -- touched for app.schedule.auto-pause-after-days (default 14) get paused.
+    last_activity_at timestamptz NOT NULL DEFAULT now(),
     created_at  timestamptz  NOT NULL DEFAULT now(),
     updated_at  timestamptz  NOT NULL DEFAULT now(),
     archived_at timestamptz  -- soft delete: non-null means archived
@@ -74,6 +77,9 @@ CREATE TABLE checklist_schedules (
     starts_on       date        NOT NULL,
     ends_on         date,                    -- stop after this date, or...
     max_occurrences integer     CHECK (max_occurrences > 0),  -- ...after N occurrences
+    -- Set when the list is auto-paused for inactivity: no new occurrences, and missed days
+    -- while paused don't break streaks. Cleared when someone opens the list again.
+    paused_at       timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
     CHECK (ends_on IS NULL OR ends_on >= starts_on),
@@ -176,6 +182,8 @@ CREATE INDEX ix_item_assignees_user ON item_assignees (user_id, checklist_id);
 -- ===========================================================================
 -- OCCURRENCES: one copy of the list per day/week/... it's due.
 -- A one-time list has exactly one occurrence (with no deadline).
+-- Occurrences are created lazily: only when someone opens or ticks the list that day.
+-- A due day with no occurrence row counts as missed (worked out from the schedule).
 -- ===========================================================================
 
 -- ---------------------------------------------------------------------------
@@ -190,14 +198,25 @@ CREATE TABLE checklist_occurrences (
     status            varchar(10) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED')),
     closed_at         timestamptz,
     team_completed_at timestamptz,           -- when every member with items had finished
+    -- List-wide totals, kept so history still shows "8/10 done" after compaction.
+    item_count           integer NOT NULL DEFAULT 0 CHECK (item_count >= 0),
+    completed_item_count integer NOT NULL DEFAULT 0 CHECK (completed_item_count >= 0),
+    -- Set when occurrence_items for this day were deleted to save space (after
+    -- app.history.full-detail-days, default 90). Member results and stars are kept.
+    compacted_at      timestamptz,
     created_at        timestamptz NOT NULL DEFAULT now(),
     UNIQUE (checklist_id, occurrence_date),
     UNIQUE (id, checklist_id),
     CHECK (due_at IS NULL OR due_at > starts_at),
-    CHECK ((status = 'CLOSED') = (closed_at IS NOT NULL))
+    CHECK ((status = 'CLOSED') = (closed_at IS NOT NULL)),
+    CHECK (completed_item_count <= item_count),
+    CHECK (compacted_at IS NULL OR status = 'CLOSED')
 );
 -- The nightly job: "open occurrences whose deadline has passed".
 CREATE INDEX ix_occurrences_open_due ON checklist_occurrences (due_at) WHERE status = 'OPEN';
+-- The compaction job: "closed occurrences older than 90 days that still have item detail".
+CREATE INDEX ix_occurrences_to_compact ON checklist_occurrences (occurrence_date)
+    WHERE status = 'CLOSED' AND compacted_at IS NULL;
 
 -- ---------------------------------------------------------------------------
 -- occurrence_items: the items as they were when the occurrence was created.

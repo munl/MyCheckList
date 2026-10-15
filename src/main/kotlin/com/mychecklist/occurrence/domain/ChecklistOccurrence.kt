@@ -46,6 +46,20 @@ class ChecklistOccurrence(
     @Column(name = "team_completed_at")
     var teamCompletedAt: Instant? = null
 
+    /** List-wide totals, kept so history still shows "8/10 done" after compaction. */
+    @Column(name = "item_count", nullable = false)
+    var itemCount: Int = 0
+
+    @Column(name = "completed_item_count", nullable = false)
+    var completedItemCount: Int = 0
+
+    /**
+     * Set when this day's item copies were deleted to save space (after
+     * app.history.full-detail-days). Member results and star history are kept.
+     */
+    @Column(name = "compacted_at")
+    var compactedAt: Instant? = null
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant? = null
