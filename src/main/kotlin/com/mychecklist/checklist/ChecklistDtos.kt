@@ -12,6 +12,10 @@ data class CreateChecklistRequest(
 
     @field:Size(max = 5000)
     val description: String? = null,
+
+    /** IANA time zone, e.g. "America/Vancouver". Send the phone's zone. Defaults to UTC. */
+    @field:Size(max = 64)
+    val timeZone: String? = null,
 )
 
 /**
@@ -24,6 +28,9 @@ data class UpdateChecklistRequest(
 
     @field:Size(max = 5000)
     val description: String? = null,
+
+    @field:Size(max = 64)
+    val timeZone: String? = null,
 )
 
 data class ChecklistResponse(
@@ -34,9 +41,10 @@ data class ChecklistResponse(
     val myRole: MemberRole?,
     val archived: Boolean,
     val archivedAt: Instant?,
+    val timeZone: String,
     val memberCount: Long,
+    /** Number of items in the list's template. */
     val itemCount: Long,
-    val completedItemCount: Long,
     val createdAt: Instant?,
     val updatedAt: Instant?,
 )

@@ -246,6 +246,27 @@ class ChecklistApiTest @Autowired constructor(
     }
 
     @Test
+    fun `lists keep the time zone they were created with, and unknown zones are rejected`() {
+        val owner = signedIn("owner")
+        mvc.post("/api/checklists") {
+            with(owner)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"title": "Chores", "timeZone": "America/Vancouver"}"""
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.timeZone") { value("America/Vancouver") }
+        }
+        mvc.post("/api/checklists") {
+            with(owner)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"title": "Chores", "timeZone": "Mars/Olympus"}"""
+        }.andExpect { status { isBadRequest() } }
+
+        val id = createList(owner)
+        mvc.get("/api/checklists/$id") { with(owner) }.andExpect { jsonPath("$.timeZone") { value("UTC") } }
+    }
+
+    @Test
     fun `delete requires explicit confirmation`() {
         val owner = signedIn("owner")
         val id = createList(owner)

@@ -1,15 +1,23 @@
 package com.mychecklist
 
 import com.mychecklist.checklist.Checklist
-import com.mychecklist.checklist.ChecklistItem
-import com.mychecklist.checklist.ChecklistItemRepository
+import com.mychecklist.checklist.ChecklistOccurrence
+import com.mychecklist.checklist.ChecklistOccurrenceRepository
+import com.mychecklist.checklist.ChecklistSchedule
+import com.mychecklist.checklist.ChecklistScheduleRepository
+import com.mychecklist.checklist.OccurrenceItem
+import com.mychecklist.checklist.OccurrenceItemAssignee
+import com.mychecklist.checklist.OccurrenceItemAssigneeId
+import com.mychecklist.checklist.OccurrenceItemAssigneeRepository
+import com.mychecklist.checklist.OccurrenceItemRepository
+import com.mychecklist.checklist.RepeatFrequency
+import com.mychecklist.stars.StarTransaction
+import com.mychecklist.stars.StarTransactionRepository
+import com.mychecklist.stars.StarTransactionType
 import com.mychecklist.checklist.ChecklistMember
 import com.mychecklist.checklist.ChecklistMemberId
 import com.mychecklist.checklist.ChecklistMemberRepository
 import com.mychecklist.checklist.ChecklistRepository
-import com.mychecklist.checklist.ItemAssignee
-import com.mychecklist.checklist.ItemAssigneeId
-import com.mychecklist.checklist.ItemAssigneeRepository
 import com.mychecklist.checklist.MemberRole
 import com.mychecklist.user.PlatformRole
 import com.mychecklist.user.UserService
@@ -21,9 +29,14 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.security.oauth2.jwt.Jwt
+import org.springframework.dao.DataIntegrityViolationException
 import org.testcontainers.postgresql.PostgreSQLContainer
+import java.time.DayOfWeek
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 @TestConfiguration(proxyBeanMethods = false)
 class TestcontainersConfig {
@@ -43,8 +56,11 @@ class SchemaAndUserSyncTest @Autowired constructor(
     private val userService: UserService,
     private val checklists: ChecklistRepository,
     private val members: ChecklistMemberRepository,
-    private val items: ChecklistItemRepository,
-    private val assignees: ItemAssigneeRepository,
+    private val schedules: ChecklistScheduleRepository,
+    private val occurrences: ChecklistOccurrenceRepository,
+    private val occurrenceItems: OccurrenceItemRepository,
+    private val occurrenceAssignees: OccurrenceItemAssigneeRepository,
+    private val stars: StarTransactionRepository,
 ) {
 
     private fun token(uid: String, email: String, verified: Boolean = true): Jwt =
@@ -72,19 +88,63 @@ class SchemaAndUserSyncTest @Autowired constructor(
     }
 
     @Test
-    fun `first person to complete an item wins`() {
+    fun `first person to complete an occurrence item wins, and a helper's tick counts`() {
         val owner = userService.syncFromToken(token("uid-o", "owner@example.com"))
         val friend = userService.syncFromToken(token("uid-f", "friend@example.com"))
-        val list = checklists.save(Checklist(title = "Camping", createdBy = owner.id))
+        val list = checklists.save(Checklist(title = "Chores", createdBy = owner.id, timeZone = "America/Vancouver"))
         members.save(ChecklistMember(ChecklistMemberId(list.id!!, owner.id!!), MemberRole.OWNER))
         members.save(ChecklistMember(ChecklistMemberId(list.id!!, friend.id!!), MemberRole.EDITOR))
-        val item = items.save(ChecklistItem(checklistId = list.id!!, title = "Tent", position = 1000))
-        assignees.save(ItemAssignee(ItemAssigneeId(item.id!!, owner.id!!), list.id!!))
-        assignees.save(ItemAssignee(ItemAssigneeId(item.id!!, friend.id!!), list.id!!))
+        schedules.save(
+            ChecklistSchedule(
+                checklistId = list.id!!,
+                frequency = RepeatFrequency.WEEKLY,
+                startsOn = LocalDate.of(2026, 10, 12),
+                weekdayMask = ChecklistSchedule.maskOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.SATURDAY),
+            ),
+        )
+        val today = LocalDate.of(2026, 10, 14)
+        val zone = ZoneId.of(list.timeZone)
+        val occurrence = occurrences.save(
+            ChecklistOccurrence(
+                checklistId = list.id!!,
+                occurrenceDate = today,
+                startsAt = today.atStartOfDay(zone).toInstant(),
+                dueAt = today.plusDays(1).atStartOfDay(zone).toInstant(),
+            ),
+        )
+        val item = occurrenceItems.save(
+            OccurrenceItem(occurrenceId = occurrence.id!!, checklistId = list.id!!, title = "Dishes", position = 1000),
+        )
+        occurrenceAssignees.save(OccurrenceItemAssignee(OccurrenceItemAssigneeId(item.id!!, owner.id!!), list.id!!))
 
-        assertEquals(1, items.completeIfOpen(item.id!!, friend.id!!, Instant.now()))
-        assertEquals(0, items.completeIfOpen(item.id!!, owner.id!!, Instant.now()))
-        assertEquals(friend.id, items.findById(item.id!!).get().completedBy)
-        assertEquals(1, checklists.findActiveForUser(friend.id!!).size)
+        // The friend helps out and ticks the owner's item first; the owner's tick is then a no-op.
+        assertEquals(1, occurrenceItems.completeIfOpen(item.id!!, friend.id!!, Instant.now()))
+        assertEquals(0, occurrenceItems.completeIfOpen(item.id!!, owner.id!!, Instant.now()))
+        assertEquals(friend.id, occurrenceItems.findById(item.id!!).get().completedBy)
+
+        val saved = schedules.findById(list.id!!).get()
+        assertEquals(setOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.SATURDAY), saved.weekdays)
+    }
+
+    @Test
+    fun `a star award can only be given once per person per occurrence unless voided`() {
+        val owner = userService.syncFromToken(token("uid-s", "stars@example.com"))
+        val list = checklists.save(Checklist(title = "Stars", createdBy = owner.id))
+        members.save(ChecklistMember(ChecklistMemberId(list.id!!, owner.id!!), MemberRole.OWNER))
+        val day = LocalDate.of(2026, 10, 14)
+        val occurrence = occurrences.save(
+            ChecklistOccurrence(checklistId = list.id!!, occurrenceDate = day, startsAt = Instant.now()),
+        )
+        fun award() = stars.saveAndFlush(
+            StarTransaction(list.id!!, owner.id!!, 1, StarTransactionType.DAILY_COMPLETION, occurrenceId = occurrence.id),
+        )
+
+        val first = award()
+        assertFailsWith<DataIntegrityViolationException> { award() }
+
+        first.voidedAt = Instant.now()
+        stars.saveAndFlush(first)
+        award() // allowed again after the first one was voided (item unticked, then re-ticked)
+        assertEquals(1L, stars.balanceOf(list.id!!, owner.id!!))
     }
 }

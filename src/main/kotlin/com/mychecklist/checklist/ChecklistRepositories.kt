@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 
 /** Query result: number of members in one checklist. */
@@ -14,11 +15,10 @@ interface ChecklistMemberCount {
     val total: Long
 }
 
-/** Query result: total and completed items in one checklist. */
+/** Query result: number of template items in one checklist. */
 interface ChecklistItemCount {
     val checklistId: UUID
     val total: Long
-    val completed: Long
 }
 
 interface ChecklistRepository : JpaRepository<Checklist, UUID> {
@@ -57,7 +57,7 @@ interface ChecklistRepository : JpaRepository<Checklist, UUID> {
 
     @Query(
         """
-        select i.checklistId as checklistId, count(*) as total, count(i.completedAt) as completed
+        select i.checklistId as checklistId, count(*) as total
         from ChecklistItem i
         where i.checklistId in :ids
         group by i.checklistId
@@ -84,18 +84,39 @@ interface ChecklistInvitationRepository : JpaRepository<ChecklistInvitation, UUI
 }
 
 interface ChecklistItemRepository : JpaRepository<ChecklistItem, UUID> {
-
     fun findByChecklistIdOrderByPositionAsc(checklistId: UUID): List<ChecklistItem>
+}
+
+interface ItemAssigneeRepository : JpaRepository<ItemAssignee, ItemAssigneeId> {
+    fun findByIdItemId(itemId: UUID): List<ItemAssignee>
+
+    /** Items assigned to one user in one checklist: the "separate by user" view. */
+    fun findByChecklistIdAndIdUserId(checklistId: UUID, userId: UUID): List<ItemAssignee>
+}
+
+interface ChecklistScheduleRepository : JpaRepository<ChecklistSchedule, UUID>
+
+interface ChecklistOccurrenceRepository : JpaRepository<ChecklistOccurrence, UUID> {
+    fun findByChecklistIdAndOccurrenceDate(checklistId: UUID, occurrenceDate: LocalDate): ChecklistOccurrence?
+
+    /** For the nightly job: open occurrences whose deadline has passed. */
+    fun findByStatusAndDueAtLessThanEqual(status: OccurrenceStatus, now: Instant): List<ChecklistOccurrence>
+}
+
+interface OccurrenceItemRepository : JpaRepository<OccurrenceItem, UUID> {
+
+    fun findByOccurrenceIdOrderByPositionAsc(occurrenceId: UUID): List<OccurrenceItem>
 
     /**
      * "Whoever gets to it first": only succeeds if nobody has completed the item yet.
      * Returns 1 if this caller completed it, 0 if someone else already had.
+     * The caller must first check that the occurrence is still OPEN.
      */
     @Transactional
     @Modifying(clearAutomatically = true)
     @Query(
         """
-        update ChecklistItem i
+        update OccurrenceItem i
         set i.completedAt = :now, i.completedBy = :userId, i.version = i.version + 1
         where i.id = :itemId and i.completedAt is null
         """,
@@ -107,9 +128,10 @@ interface ChecklistItemRepository : JpaRepository<ChecklistItem, UUID> {
     ): Int
 }
 
-interface ItemAssigneeRepository : JpaRepository<ItemAssignee, ItemAssigneeId> {
-    fun findByIdItemId(itemId: UUID): List<ItemAssignee>
+interface OccurrenceItemAssigneeRepository : JpaRepository<OccurrenceItemAssignee, OccurrenceItemAssigneeId> {
+    fun findByIdOccurrenceItemId(occurrenceItemId: UUID): List<OccurrenceItemAssignee>
+}
 
-    /** Items assigned to one user in one checklist: the "separate by user" view. */
-    fun findByChecklistIdAndIdUserId(checklistId: UUID, userId: UUID): List<ItemAssignee>
+interface OccurrenceMemberResultRepository : JpaRepository<OccurrenceMemberResult, OccurrenceMemberResultId> {
+    fun findByIdOccurrenceId(occurrenceId: UUID): List<OccurrenceMemberResult>
 }

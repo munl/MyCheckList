@@ -2,6 +2,11 @@
 # Creates the V1 backlog as GitHub issues in munl/MyCheckList.
 # Needs the GitHub CLI:  brew install gh && gh auth login
 # Safe to re-run: issues whose title already exists are skipped.
+#
+# NOTE (2026-10-15): the Items and Assignment issues below predate repeating lists.
+# Items now live on a template, and ticking happens on per-day "occurrences".
+# Stars and rewards were added too. docs/PROGRESS.md (Roadmap, Repeating lists,
+# Stars and rewards) is the up-to-date spec. Update these issues before running.
 set -euo pipefail
 
 REPO="munl/MyCheckList"

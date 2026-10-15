@@ -10,11 +10,11 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
-import jakarta.persistence.Version
 import org.hibernate.annotations.CreationTimestamp
 import org.hibernate.annotations.UpdateTimestamp
 import java.io.Serializable
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 
 // Foreign keys are mapped as plain UUID fields rather than JPA relationships.
@@ -32,9 +32,6 @@ enum class MemberRole(val rank: Int) {
 
 enum class InvitationStatus { PENDING, ACCEPTED, DECLINED, REVOKED, EXPIRED }
 
-/** V1 only supports ANY. EACH (every assignee checks off their own copy) can come later. */
-enum class CompletionMode { ANY }
-
 @Entity
 @Table(name = "checklists")
 class Checklist(
@@ -46,10 +43,24 @@ class Checklist(
 
     @Column(name = "created_by")
     var createdBy: UUID? = null,
+
+    /** IANA zone (e.g. "America/Vancouver"). Decides when a "day" ends for everyone on the list. */
+    @Column(name = "time_zone", nullable = false, length = 64)
+    var timeZone: String = "UTC",
 ) {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     var id: UUID? = null
+
+    /** Consecutive occurrences where every member with items finished them. */
+    @Column(name = "team_current_streak", nullable = false)
+    var teamCurrentStreak: Int = 0
+
+    @Column(name = "team_longest_streak", nullable = false)
+    var teamLongestStreak: Int = 0
+
+    @Column(name = "team_last_completed_date")
+    var teamLastCompletedDate: LocalDate? = null
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -85,6 +96,22 @@ class ChecklistMember(
     @CreationTimestamp
     @Column(name = "joined_at", nullable = false, updatable = false)
     var joinedAt: Instant? = null
+
+    // Cached totals. star_transactions is the source of truth; these are updated in the
+    // same transaction as each ledger row so reads stay fast.
+
+    @Column(name = "star_balance", nullable = false)
+    var starBalance: Int = 0
+
+    @Column(name = "current_streak", nullable = false)
+    var currentStreak: Int = 0
+
+    @Column(name = "longest_streak", nullable = false)
+    var longestStreak: Int = 0
+
+    /** occurrence_date of the last occurrence this member finished. */
+    @Column(name = "last_completed_date")
+    var lastCompletedDate: LocalDate? = null
 }
 
 @Entity
@@ -125,6 +152,7 @@ class ChecklistInvitation(
     var respondedAt: Instant? = null
 }
 
+/** A template item. Each occurrence gets its own copy (OccurrenceItem) when it's created. */
 @Entity
 @Table(name = "checklist_items")
 class ChecklistItem(
@@ -140,25 +168,12 @@ class ChecklistItem(
     @Column
     var notes: String? = null,
 
-    @Column(name = "due_at")
-    var dueAt: Instant? = null,
-
     @Column(name = "created_by")
     var createdBy: UUID? = null,
 ) {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     var id: UUID? = null
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "completion_mode", nullable = false, length = 10)
-    var completionMode: CompletionMode = CompletionMode.ANY
-
-    @Column(name = "completed_at")
-    var completedAt: Instant? = null
-
-    @Column(name = "completed_by")
-    var completedBy: UUID? = null
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -167,11 +182,6 @@ class ChecklistItem(
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant? = null
-
-    /** Optimistic locking: an update based on a stale copy fails instead of silently overwriting. */
-    @Version
-    @Column(nullable = false)
-    var version: Long = 0
 }
 
 @Embeddable
@@ -183,6 +193,7 @@ data class ItemAssigneeId(
     var userId: UUID,
 ) : Serializable
 
+/** Default assignee of a template item; copied into each occurrence. */
 @Entity
 @Table(name = "item_assignees")
 class ItemAssignee(

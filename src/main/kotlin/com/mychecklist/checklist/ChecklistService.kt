@@ -5,7 +5,9 @@ import com.mychecklist.common.ConflictException
 import com.mychecklist.user.User
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.DateTimeException
 import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 
 @Service
@@ -30,6 +32,7 @@ class ChecklistService(
                 title = request.title.trim(),
                 description = request.description.normalized(),
                 createdBy = user.id,
+                timeZone = validTimeZone(request.timeZone ?: "UTC"),
             ),
         )
         members.save(ChecklistMember(ChecklistMemberId(checklist.id!!, user.id!!), MemberRole.OWNER))
@@ -58,6 +61,7 @@ class ChecklistService(
             checklist.title = it.trim()
         }
         if (request.description != null) checklist.description = request.description.normalized()
+        if (request.timeZone != null) checklist.timeZone = validTimeZone(request.timeZone)
         checklists.saveAndFlush(checklist)
         access.auditIfAdmin(granted, user, "UPDATE_CHECKLIST")
         return toResponse(granted)
@@ -106,7 +110,7 @@ class ChecklistService(
         if (lists.isEmpty()) return emptyList()
         val ids = lists.map { it.id!! }
         val memberCounts = checklists.countMembers(ids).associate { it.checklistId to it.total }
-        val itemCounts = checklists.countItems(ids).associateBy { it.checklistId }
+        val itemCounts = checklists.countItems(ids).associate { it.checklistId to it.total }
         return lists.map { c ->
             val id = c.id!!
             ChecklistResponse(
@@ -116,14 +120,21 @@ class ChecklistService(
                 myRole = roles[id],
                 archived = c.archivedAt != null,
                 archivedAt = c.archivedAt,
+                timeZone = c.timeZone,
                 memberCount = memberCounts[id] ?: 0,
-                itemCount = itemCounts[id]?.total ?: 0,
-                completedItemCount = itemCounts[id]?.completed ?: 0,
+                itemCount = itemCounts[id] ?: 0,
                 createdAt = c.createdAt,
                 updatedAt = c.updatedAt,
             )
         }
     }
+
+    private fun validTimeZone(zone: String): String =
+        try {
+            ZoneId.of(zone.trim()).id
+        } catch (e: DateTimeException) {
+            throw BadRequestException("Unknown time zone: use an IANA name like America/Vancouver")
+        }
 
     /** Trims text; blank becomes null. */
     private fun String?.normalized(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
