@@ -1,6 +1,6 @@
 package com.mychecklist.user
 
-import org.springframework.context.annotation.Configuration
+import com.mychecklist.user.domain.User
 import org.springframework.core.MethodParameter
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.oauth2.jwt.Jwt
@@ -9,7 +9,6 @@ import org.springframework.web.bind.support.WebDataBinderFactory
 import org.springframework.web.context.request.NativeWebRequest
 import org.springframework.web.method.support.HandlerMethodArgumentResolver
 import org.springframework.web.method.support.ModelAndViewContainer
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 
 /**
  * Put this on a controller parameter to receive the signed-in user's database row:
@@ -38,12 +37,5 @@ class CurrentUserArgumentResolver(private val userService: UserService) : Handle
         val jwt = SecurityContextHolder.getContext().authentication?.principal as? Jwt
             ?: throw IllegalStateException("@CurrentUser used on an endpoint without JWT authentication")
         return userService.syncFromToken(jwt)
-    }
-}
-
-@Configuration
-class CurrentUserWebConfig(private val resolver: CurrentUserArgumentResolver) : WebMvcConfigurer {
-    override fun addArgumentResolvers(resolvers: MutableList<HandlerMethodArgumentResolver>) {
-        resolvers.add(resolver)
     }
 }

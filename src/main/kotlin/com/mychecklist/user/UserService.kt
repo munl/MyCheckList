@@ -1,8 +1,11 @@
 package com.mychecklist.user
 
+import com.mychecklist.common.error.ConflictException
+import com.mychecklist.common.error.ForbiddenException
 import com.mychecklist.config.AppProperties
-import com.mychecklist.common.ConflictException
-import com.mychecklist.common.ForbiddenException
+import com.mychecklist.user.data.UserRepository
+import com.mychecklist.user.domain.PlatformRole
+import com.mychecklist.user.domain.User
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional

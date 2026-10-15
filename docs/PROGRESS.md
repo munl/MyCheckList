@@ -9,7 +9,7 @@ Last updated: 2026-10-15
 
 The database now supports **repeating lists, stars, streaks and rewards**. The schema is done, and the entities match it. The APIs for these features haven't been built yet.
 
-`./gradlew test` passed 14 of 14 tests before this change. **The new schema needs a fresh `./gradlew test` run on Jian's Mac** (expect 16 tests).
+`./gradlew test` passed 14 of 14 tests before this change. The new schema passed 16 of 16 tests. The code was then reorganized by feature, which **needs one more `./gradlew test` run**.
 
 - **Repo:** [github.com/munl/MyCheckList](https://github.com/munl/MyCheckList), branch `main`
 - **Firebase project ID:** `mychecklist-e745d` (the default in config)
@@ -18,7 +18,7 @@ The database now supports **repeating lists, stars, streaks and rewards**. The s
 
 ### Pick up here
 
-1. Run `./gradlew test`, fix anything that fails, then commit and push.
+1. Run `./gradlew test` after the package reorganization, fix anything that fails, then commit and push.
 2. Build the **Members API**: list members, change role (EDITOR ⇄ VIEWER), remove a member, leave a list, transfer ownership. The owner can't be removed or demoted directly.
 3. Build the **Invitations API**: invite by email (EDITOR+, and only the OWNER can invite editors), the inbox at `/api/me/invitations`, accept or decline, revoke, expiry. Responses must not reveal whether an email has an account.
 4. Build the **Schedule, Items and Occurrences API**. See [Repeating lists](#repeating-lists) and [Stars and rewards](#stars-and-rewards) below for the rules.
@@ -36,7 +36,7 @@ No real database has been created yet. `./gradlew test` uses a temporary Postgre
 | Topic | Decision | Why |
 | --- | --- | --- |
 | Stack | Kotlin 2.2, Spring Boot 4.0.8, Java 21, Gradle 8.14 | Spring Boot 3.5 is past end of life; Kotlin matches Jian's Android background |
-| Architecture | A modular monolith: one Spring Boot app and one database, with code grouped by feature (`user/`, `checklist/`, `stars/`, `admin/`) | The data is tightly linked, so splitting it into services gains nothing at this scale. To scale, add replicas. A notifications worker is the first candidate to split out later |
+| Architecture | A modular monolith: one Spring Boot app and one database. Code is organized **by feature** (`user/`, `checklist/`, `occurrence/`, `stars/`, `reward/`...), each with `api/`, `domain/` and `data/` subfolders, following the Spring Boot docs' recommended layout | The data is tightly linked, so splitting it into services gains nothing at this scale. To scale, add replicas. A notifications worker is the first candidate to split out later |
 | Database | PostgreSQL, with the schema managed by Flyway migrations | Versioned SQL files; the app refuses to start if the code and tables disagree |
 | Auth | Firebase Google sign-in; the server checks the ID token against Google's public keys | No service account file needed |
 | Permissions | All checklist access goes through `ChecklistAccessService.requireAccess(...)`. Non-member: 404. Role too low: 403. Archived list: 409 on writes | One place to get right; IDs can't be probed |
@@ -171,26 +171,24 @@ The most anyone can earn per occurrence is 7★. Example: on day 10 of your stre
 
 ## What's in the repo
 
-The source code is under `src/main/kotlin/com/mychecklist/`.
+The source code is under `src/main/kotlin/com/mychecklist/`, organized **by feature**. Every feature has the same `api/` (controllers + DTOs), `domain/` (entities, one per file) and `data/` (repositories) folders, with its service at the feature root. The README has the full tree and rules.
 
 | Path | What it does |
 | --- | --- |
 | `build.gradle.kts`, `settings.gradle.kts`, `gradlew` | Build setup: dependencies, the Kotlin and Spring plugins, the Java 21 toolchain |
 | `resources/application.yml` | Settings: database URL, Firebase token checks, health endpoints. Each can be overridden with an env var |
 | `resources/db/migration/V1__initial_schema.sql` | All 15 tables, constraints, indexes and `updated_at` triggers |
-| `config/SecurityConfig.kt` | Every `/api/**` request needs a Firebase token; health checks are public; no server-side sessions |
-| `config/AppProperties.kt` | Reads `app.firebase-project-id` and `app.super-admin-emails` |
-| `common/ApiExceptions.kt`, `ApiExceptionHandler.kt` | `NotFound` / `Forbidden` / `Conflict` / `BadRequest` exceptions, turned into problem JSON |
-| `user/` | `User` entity, `UserService` (token → user row), `@CurrentUser`, `GET /api/me` |
-| `checklist/ChecklistEntities.kt` | Checklists, members (with star and streak totals), invitations, template items and assignees |
-| `checklist/ScheduleEntities.kt` | Schedules, occurrences, occurrence items and assignees, member results |
-| `checklist/ChecklistRepositories.kt` | Database queries, including `OccurrenceItemRepository.completeIfOpen` (first one wins) |
-| `checklist/ChecklistAccessService.kt` | **The permission check.** Every checklist, member, invite, item and reward operation must call `requireAccess` |
-| `checklist/ChecklistService.kt`, `ChecklistController.kt`, `ChecklistDtos.kt` | The checklists API |
-| `stars/StarEntities.kt`, `StarRepositories.kt` | The star ledger, rewards, redemptions |
+| `config/` | `SecurityConfig` (every `/api/**` request needs a Firebase token), `AppProperties`, `WebConfig` |
+| `common/error/` | `NotFound` / `Forbidden` / `Conflict` / `BadRequest` exceptions, turned into problem JSON |
+| `user/` | `UserService` (token → user row), `@CurrentUser`; `api/` `GET /api/me`; `domain/` `User`; `data/` `UserRepository` |
+| `checklist/` | `ChecklistAccessService` (**the permission check**: every checklist, member, invite, item and reward operation must call `requireAccess`), `ChecklistService`; `api/` controller and DTOs; `domain/` `Checklist`, `ChecklistMember` (with star and streak totals), `MemberRole` |
+| `invitation/`, `item/`, `schedule/` | Entities and repositories for invitations, template items and assignees, and repeat rules |
+| `occurrence/` | Occurrences, their item copies and assignees, member results; `OccurrenceItemRepository.completeIfOpen` (first one wins) |
+| `stars/`, `reward/` | The star ledger; rewards and redemptions |
 | `admin/` | `AdminAuditService` (audit rows), `GET /api/admin/users` |
 | `src/test/.../SchemaAndUserSyncTest.kt` | Schema, user sync, "first one wins" with a helper, schedule weekdays, award-once tests |
-| `src/test/.../ChecklistApiTest.kt` | API tests: each role, super admin, archived lists, validation, time zones, 401 |
+| `src/test/.../checklist/ChecklistApiTest.kt` | API tests: each role, super admin, archived lists, validation, time zones, 401 |
+| `src/test/.../support/` | `TestcontainersConfig` (shared throwaway Postgres) |
 | `Dockerfile`, `docker-compose.yml`, `k8s/` | Container image, local Postgres 17, Kubernetes manifests |
 | `scripts/create-github-issues.sh` | Creates the V1 backlog as GitHub issues (`gh` CLI). Tickets are on hold for now |
 
@@ -243,7 +241,8 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 - [x] **Authorization layer:** `ChecklistAccessService`, `@CurrentUser`, problem-detail errors, validation, admin audit
 - [x] **Checklists API:** create, list mine, get, rename, archive, unarchive, delete (14 tests passed)
 - [x] **Schema for repeating lists, stars and rewards** (schedules, occurrences, results, ledger, rewards, redemptions) and its entities
-- [ ] Run `./gradlew test` on the new schema (expect 16 tests)
+- [x] Run `./gradlew test` on the new schema: 16 of 16 pass
+- [ ] Reorganize the code into feature packages (`api/`, `domain/`, `data/`): done, waiting on a test run
 - [ ] Set up Firebase Google sign-in and test `/api/me` with a real token (in progress)
 - [ ] **Members API:** list, change role, remove, leave, transfer ownership
 - [ ] **Invitations API:** invite by email, inbox, accept or decline, revoke
@@ -268,6 +267,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 
 | Date | What was done |
 | --- | --- |
+| 2026-10-15 (later) | Confirmed the new schema: 16 of 16 tests pass. Reorganized the code by feature, with `api/`, `domain/` and `data/` subfolders and one entity per file (25 files became 57; no logic changed). Moved the Testcontainers setup to `src/test/.../support/` |
 | 2026-10-15 | Designed repeating lists, stars, streaks, a team bonus and rewards with Jian. Every list became a template plus per-period occurrences, with a schedule table following RFC 5545. Added a star ledger, cached balances and streaks, rewards and redemptions (stars held, owners or editors approve, no self-approval). Rewrote V1 in place, since no real database exists yet. Checked every new constraint against Postgres 16. Updated the entities and tests (16 total, not yet run). Removed `completion_mode` (it may come back as `EACH` in a later migration). The checklist response now has `timeZone` and no longer has `completedItemCount` |
 | 2026-10-14 (later) | Decided on a modular monolith and reviewed security. Added the authorization layer, problem-detail errors, `@CurrentUser` and the checklists API; 14 of 14 tests pass. Set the Firebase project ID. Wrote `scripts/create-github-issues.sh` |
 | 2026-10-14 | Planned the schema and roles, and added the super admin role. Scaffolded the Spring Boot project. Installed Docker; `./gradlew test` passes 3 of 3. Pushed to `munl/MyCheckList` on `main`. Added this progress file |

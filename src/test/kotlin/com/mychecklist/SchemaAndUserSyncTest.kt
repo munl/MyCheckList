@@ -1,50 +1,39 @@
 package com.mychecklist
 
-import com.mychecklist.checklist.Checklist
-import com.mychecklist.checklist.ChecklistOccurrence
-import com.mychecklist.checklist.ChecklistOccurrenceRepository
-import com.mychecklist.checklist.ChecklistSchedule
-import com.mychecklist.checklist.ChecklistScheduleRepository
-import com.mychecklist.checklist.OccurrenceItem
-import com.mychecklist.checklist.OccurrenceItemAssignee
-import com.mychecklist.checklist.OccurrenceItemAssigneeId
-import com.mychecklist.checklist.OccurrenceItemAssigneeRepository
-import com.mychecklist.checklist.OccurrenceItemRepository
-import com.mychecklist.checklist.RepeatFrequency
-import com.mychecklist.stars.StarTransaction
-import com.mychecklist.stars.StarTransactionRepository
-import com.mychecklist.stars.StarTransactionType
-import com.mychecklist.checklist.ChecklistMember
-import com.mychecklist.checklist.ChecklistMemberId
-import com.mychecklist.checklist.ChecklistMemberRepository
-import com.mychecklist.checklist.ChecklistRepository
-import com.mychecklist.checklist.MemberRole
-import com.mychecklist.user.PlatformRole
+import com.mychecklist.checklist.data.ChecklistMemberRepository
+import com.mychecklist.checklist.data.ChecklistRepository
+import com.mychecklist.checklist.domain.Checklist
+import com.mychecklist.checklist.domain.ChecklistMember
+import com.mychecklist.checklist.domain.ChecklistMemberId
+import com.mychecklist.checklist.domain.MemberRole
+import com.mychecklist.occurrence.data.ChecklistOccurrenceRepository
+import com.mychecklist.occurrence.data.OccurrenceItemAssigneeRepository
+import com.mychecklist.occurrence.data.OccurrenceItemRepository
+import com.mychecklist.occurrence.domain.ChecklistOccurrence
+import com.mychecklist.occurrence.domain.OccurrenceItem
+import com.mychecklist.occurrence.domain.OccurrenceItemAssignee
+import com.mychecklist.occurrence.domain.OccurrenceItemAssigneeId
+import com.mychecklist.schedule.data.ChecklistScheduleRepository
+import com.mychecklist.schedule.domain.ChecklistSchedule
+import com.mychecklist.schedule.domain.RepeatFrequency
+import com.mychecklist.stars.data.StarTransactionRepository
+import com.mychecklist.stars.domain.StarTransaction
+import com.mychecklist.stars.domain.StarTransactionType
+import com.mychecklist.support.TestcontainersConfig
 import com.mychecklist.user.UserService
+import com.mychecklist.user.domain.PlatformRole
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
-import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
-import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.dao.DataIntegrityViolationException
-import org.testcontainers.postgresql.PostgreSQLContainer
+import org.springframework.security.oauth2.jwt.Jwt
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-
-@TestConfiguration(proxyBeanMethods = false)
-class TestcontainersConfig {
-    /** Starts a throwaway Postgres in Docker for the tests (Docker must be running). */
-    @Bean
-    @ServiceConnection
-    fun postgres() = PostgreSQLContainer("postgres:17-alpine")
-}
 
 /**
  * Starting the app at all proves the Flyway migration runs and the JPA entities match

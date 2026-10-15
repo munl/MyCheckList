@@ -1,6 +1,8 @@
 package com.mychecklist.admin
 
-import com.mychecklist.user.User
+import com.mychecklist.admin.data.AdminAuditLogRepository
+import com.mychecklist.admin.domain.AdminAuditLog
+import com.mychecklist.user.domain.User
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional

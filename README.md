@@ -143,13 +143,41 @@ Errors come back as [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) JSON (`st
 
 ```
 src/main/kotlin/com/mychecklist/
-├── common/     ApiExceptions, ApiExceptionHandler (RFC 7807 errors)
-├── config/     SecurityConfig (Firebase JWT), AppProperties
-├── user/       User entity, UserService (token → user row), @CurrentUser, /api/me
-├── checklist/  lists, members, schedules, occurrences, ChecklistAccessService (permissions), checklists API
-├── stars/      star ledger, rewards, redemptions
-└── admin/      audit log, /api/admin
+├── MyChecklistApplication.kt
+├── config/          SecurityConfig (Firebase JWT), AppProperties, WebConfig
+├── common/error/    ApiExceptions, ApiExceptionHandler (RFC 7807 errors)
+├── user/            UserService (token → user row), @CurrentUser
+│   ├── api/         MeController, UserResponse
+│   ├── domain/      User, PlatformRole
+│   └── data/        UserRepository
+├── checklist/       ChecklistService, ChecklistAccessService (permissions)
+│   ├── api/         ChecklistController, ChecklistDtos
+│   ├── domain/      Checklist, ChecklistMember, MemberRole
+│   └── data/        ChecklistRepository, ChecklistMemberRepository
+├── invitation/      domain/ ChecklistInvitation, InvitationStatus · data/
+├── item/            domain/ ChecklistItem, ItemAssignee (the template) · data/
+├── schedule/        domain/ ChecklistSchedule, RepeatFrequency · data/
+├── occurrence/      domain/ ChecklistOccurrence, OccurrenceItem, OccurrenceItemAssignee, OccurrenceMemberResult · data/
+├── stars/           domain/ StarTransaction, StarTransactionType · data/
+├── reward/          domain/ Reward, RewardRedemption, RedemptionStatus · data/
+└── admin/           AdminAuditService · api/ AdminController · domain/ AdminAuditLog · data/
 ```
+
+Every feature uses the same layout:
+
+| Folder | Holds |
+| --- | --- |
+| `api/` | Controllers, plus the `…Request` and `…Response` classes (DTOs) |
+| `domain/` | Entities (one per file) and their enums |
+| `data/` | Repositories (database queries) |
+| `XService.kt` at the feature root | Business rules and transactions |
+
+**Rules:**
+
+- Controllers only call services.
+- Entities are never returned to the app; use a `…Response` class.
+- A feature uses another feature's *service*, not its repositories. The exception is `ChecklistAccessService`, which every feature uses for permission checks.
+- Tests follow the same folders. Shared test helpers go in `src/test/.../support/`.
 
 **Rule for new endpoints:** take `@CurrentUser user: User`. Anything that touches a checklist must call `ChecklistAccessService.requireAccess(checklistId, user, minimumRole)` first, then `auditIfAdmin(...)` after a write. Never build SQL by joining strings.
 
