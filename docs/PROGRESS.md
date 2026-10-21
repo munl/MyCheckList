@@ -124,6 +124,7 @@ erDiagram
 | Balances never go negative | `CHECK (star_balance >= 0)` |
 | Adjustments have a reason and an author | CHECK on `star_transactions` |
 | Reward costs are 1–100,000 stars | CHECK |
+| Emails are lowercase | CHECK constraints on `users.email` and `checklist_invitations.invitee_email` |
 | `updated_at` stays correct, even for edits made directly in SQL | Database triggers |
 
 ## Repeating lists
