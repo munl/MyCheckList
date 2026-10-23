@@ -51,4 +51,8 @@ class ChecklistMember(
     /** occurrence_date of the last occurrence this member finished. */
     @Column(name = "last_completed_date")
     var lastCompletedDate: LocalDate? = null
+
+    /** Set when they leave or are removed (soft removal). Null while they're a member. */
+    @Column(name = "removed_at")
+    var removedAt: Instant? = null
 }

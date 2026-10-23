@@ -32,10 +32,10 @@ data class ChecklistAccess(
  * checklist, its members, invitations or items must go through [requireAccess] first.
  *
  * Rules:
- *  - Not a member (or the checklist doesn't exist)  -> 404, so IDs can't be probed.
- *  - Member, but role too low                       -> 403.
- *  - Checklist archived and the action is a write   -> 409 (archived lists are read-only).
- *  - Super admin                                    -> always allowed; writes get audited via [auditIfAdmin].
+ *  - Not a member, removed, or no such checklist  -> 404, so IDs can't be probed.
+ *  - Member, but role too low                     -> 403.
+ *  - Checklist archived and the action is a write -> 409 (archived lists are read-only).
+ *  - Super admin                                  -> always allowed; writes get audited via [auditIfAdmin].
  */
 @Service
 class ChecklistAccessService(
@@ -57,7 +57,7 @@ class ChecklistAccessService(
     ): ChecklistAccess {
         val notFound = NotFoundException("Checklist not found")
         val checklist = checklists.findByIdOrNull(checklistId) ?: throw notFound
-        val role = members.findByIdOrNull(ChecklistMemberId(checklistId, user.id!!))?.role
+        val role = members.findByIdAndRemovedAtIsNull(ChecklistMemberId(checklistId, user.id!!))?.role
 
         val access = when {
             role != null && role.atLeast(minimum) -> ChecklistAccess(checklist, role, viaSuperAdmin = false)

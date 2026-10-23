@@ -106,11 +106,14 @@ CREATE TABLE checklist_members (
     current_streak      integer NOT NULL DEFAULT 0 CHECK (current_streak >= 0),
     longest_streak      integer NOT NULL DEFAULT 0 CHECK (longest_streak >= 0),
     last_completed_date date,  -- occurrence_date of the last occurrence they finished
+    -- Soft removal: set when they leave or are removed. The row is kept for star history,
+    -- and a rejoin clears it. Removed members are treated like outsiders.
+    removed_at          timestamptz,
     PRIMARY KEY (checklist_id, user_id)
 );
--- At most one OWNER per checklist.
+-- At most one OWNER per checklist (among members who haven't been removed).
 CREATE UNIQUE INDEX ux_checklist_members_one_owner
-    ON checklist_members (checklist_id) WHERE role = 'OWNER';
+    ON checklist_members (checklist_id) WHERE role = 'OWNER' AND removed_at IS NULL;
 -- "Which checklists am I in?"
 CREATE INDEX ix_checklist_members_user ON checklist_members (user_id);
 
@@ -174,6 +177,8 @@ CREATE TABLE item_assignees (
     PRIMARY KEY (item_id, user_id),
     FOREIGN KEY (item_id, checklist_id)
         REFERENCES checklist_items (id, checklist_id) ON DELETE CASCADE,
+    -- Rejects people who were never members. Removed members still have a row, so code
+    -- that assigns people must check they're active (removed_at IS NULL).
     FOREIGN KEY (checklist_id, user_id)
         REFERENCES checklist_members (checklist_id, user_id) ON DELETE CASCADE
 );
@@ -256,6 +261,8 @@ CREATE TABLE occurrence_item_assignees (
     PRIMARY KEY (occurrence_item_id, user_id),
     FOREIGN KEY (occurrence_item_id, checklist_id)
         REFERENCES occurrence_items (id, checklist_id) ON DELETE CASCADE,
+    -- Rejects people who were never members. Removed members still have a row, so code
+    -- that assigns people must check they're active (removed_at IS NULL).
     FOREIGN KEY (checklist_id, user_id)
         REFERENCES checklist_members (checklist_id, user_id) ON DELETE CASCADE
 );

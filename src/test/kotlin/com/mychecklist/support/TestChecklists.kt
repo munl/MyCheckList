@@ -1,13 +1,12 @@
 package com.mychecklist.support
 
 import com.jayway.jsonpath.JsonPath
-import com.mychecklist.checklist.data.ChecklistMemberRepository
-import com.mychecklist.checklist.domain.ChecklistMember
-import com.mychecklist.checklist.domain.ChecklistMemberId
+import com.mychecklist.checklist.MemberService
 import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.user.data.UserRepository
 import org.springframework.boot.test.context.TestComponent
 import org.springframework.http.MediaType
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
@@ -22,7 +21,8 @@ import java.util.UUID
 class TestChecklists(
     private val mvc: MockMvc,
     private val users: UserRepository,
-    private val members: ChecklistMemberRepository,
+    private val memberService: MemberService,
+    private val jdbc: JdbcTemplate,
 ) {
 
     /** Creates a list through the API, so [who] becomes its owner. Returns its ID. */
@@ -37,11 +37,26 @@ class TestChecklists(
         return UUID.fromString(JsonPath.read(body, "$.id"))
     }
 
-    /** Looks up (creating if needed) the user row behind a test token, then adds them to a list. */
-    fun addMember(listId: UUID, who: RequestPostProcessor, role: MemberRole) {
+    /** The user ID behind a test token, creating the user row on first use. */
+    fun userId(who: RequestPostProcessor): UUID {
         val email = mvc.get("/api/me") { with(who) }.andExpect { status { isOk() } }.andReturn().response.contentAsString
             .let { JsonPath.read<String>(it, "$.email") }
-        val user = users.findByEmail(email)!!
-        members.save(ChecklistMember(ChecklistMemberId(listId, user.id!!), role))
+        return users.findByEmail(email)!!.id!!
+    }
+
+    /** Adds the user behind a test token to a list (restoring their old row if they were removed). */
+    fun addMember(listId: UUID, who: RequestPostProcessor, role: MemberRole) {
+        memberService.addOrRestore(listId, userId(who), role)
+    }
+
+    /**
+     * Inserts an OWNER row with SQL, for tests that need a second owner row. The app never
+     * adds owners this way: they come from creating a list or a transfer.
+     */
+    fun insertOwnerRow(listId: UUID, who: RequestPostProcessor) {
+        jdbc.update(
+            "INSERT INTO checklist_members (checklist_id, user_id, role) VALUES (?, ?, 'OWNER')",
+            listId, userId(who),
+        )
     }
 }
