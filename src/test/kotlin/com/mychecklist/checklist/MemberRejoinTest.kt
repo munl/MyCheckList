@@ -3,6 +3,8 @@ package com.mychecklist.checklist
 import com.mychecklist.checklist.data.ChecklistMemberRepository
 import com.mychecklist.checklist.domain.ChecklistMemberId
 import com.mychecklist.checklist.domain.MemberRole
+import com.mychecklist.common.error.ConflictException
+import com.mychecklist.common.error.NotFoundException
 import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
 import com.mychecklist.support.signedIn
@@ -14,9 +16,12 @@ import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.post
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 /**
@@ -110,5 +115,29 @@ class MemberRejoinTest @Autowired constructor(
         assertFailsWith<IllegalArgumentException> {
             memberService.addOrRestore(id, oldOwnerId, MemberRole.OWNER)
         }
+    }
+
+    @Test
+    fun `nobody can join or rejoin an archived list`() {
+        val owner = signedIn("owner")
+        val id = checklists.createList(owner)
+        val removedId = checklists.userId(signedIn("removed"))
+        memberService.addOrRestore(id, removedId, MemberRole.EDITOR)
+        markRemoved(id, removedId)
+        mvc.post("/api/checklists/$id/archive") { with(owner) }.andExpect { status { isOk() } }
+
+        assertFailsWith<ConflictException> { memberService.addOrRestore(id, removedId, MemberRole.EDITOR) }
+        assertNotNull(members.findById(ChecklistMemberId(id, removedId)).get().removedAt)
+
+        val newcomerId = checklists.userId(signedIn("newcomer"))
+        assertFailsWith<ConflictException> { memberService.addOrRestore(id, newcomerId, MemberRole.VIEWER) }
+        assertFalse(members.existsById(ChecklistMemberId(id, newcomerId)))
+    }
+
+    @Test
+    fun `joining a list that doesn't exist gives not found`() {
+        val userId = checklists.userId(signedIn("newcomer"))
+
+        assertFailsWith<NotFoundException> { memberService.addOrRestore(UUID.randomUUID(), userId, MemberRole.VIEWER) }
     }
 }
