@@ -23,7 +23,10 @@ class OccurrenceItemAssignee(
     @EmbeddedId
     var id: OccurrenceItemAssigneeId,
 
-    /** Must match the item's checklist; the DB rejects assignees who aren't members. */
+    /**
+     * Must match the item's checklist. The DB rejects people who were never members, but
+     * not removed members (their row is kept), so code that assigns must check they're active.
+     */
     @Column(name = "checklist_id", nullable = false)
     var checklistId: UUID,
 )

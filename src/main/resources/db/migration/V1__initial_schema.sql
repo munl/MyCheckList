@@ -177,6 +177,8 @@ CREATE TABLE item_assignees (
     PRIMARY KEY (item_id, user_id),
     FOREIGN KEY (item_id, checklist_id)
         REFERENCES checklist_items (id, checklist_id) ON DELETE CASCADE,
+    -- Rejects people who were never members. Removed members still have a row, so code
+    -- that assigns people must check they're active (removed_at IS NULL).
     FOREIGN KEY (checklist_id, user_id)
         REFERENCES checklist_members (checklist_id, user_id) ON DELETE CASCADE
 );
@@ -259,6 +261,8 @@ CREATE TABLE occurrence_item_assignees (
     PRIMARY KEY (occurrence_item_id, user_id),
     FOREIGN KEY (occurrence_item_id, checklist_id)
         REFERENCES occurrence_items (id, checklist_id) ON DELETE CASCADE,
+    -- Rejects people who were never members. Removed members still have a row, so code
+    -- that assigns people must check they're active (removed_at IS NULL).
     FOREIGN KEY (checklist_id, user_id)
         REFERENCES checklist_members (checklist_id, user_id) ON DELETE CASCADE
 );
