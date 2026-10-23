@@ -114,7 +114,7 @@ To tear it all down: `kubectl delete -k k8s/`
 ./gradlew test     # needs Docker running; Testcontainers starts a temporary Postgres
 ```
 
-The report is at `build/reports/tests/test/index.html`. API tests use fake tokens (`jwt()`), so no real Firebase account is needed.
+The report is at `build/reports/tests/test/index.html`. GitHub Actions also runs the tests on every pull request and every push to `main` (`.github/workflows/tests.yml`); when they fail, the report is attached to the run as `test-report`. API tests use fake tokens (`jwt()`), so no real Firebase account is needed.
 
 ## Working on a ticket
 

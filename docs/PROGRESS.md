@@ -30,7 +30,7 @@ The Members API has started: removed members now lose access (soft removal), and
 
 1. **Never commit straight to `main`.** Make one branch per ticket pair, with the issue numbers first: e.g. `12-13-transfer-ownership` for the tests ticket #12 and the build ticket #13.
 2. Write the tests first, then the code, until `./gradlew test` passes in full.
-3. Open a PR (put `Closes #12, closes #13` in the description: GitHub needs the keyword before **each** number, or only the first issue closes).
+3. Open a PR (put `Closes #12, closes #13` in the description: GitHub needs the keyword before **each** number, or only the first issue closes). GitHub Actions runs the whole test suite on it (`.github/workflows/tests.yml`, the **Tests** check); it must pass before the PR can be merged.
 4. Run **`/review-pr`** (the skill is in `.claude/skills/review-pr/SKILL.md`). A separate reviewer agent lists the risks: anything that could break behaviour, open a security hole or lose data. No style nitpicks. It skips risks that another open ticket already plans, decisions recorded below, and things already raised on the PR.
 5. Reply with a choice for each risk, e.g. `fix 1,3 · backlog 2 · drop 4 (fine for MVP) · discuss 5`. Then:
    - each risk gets its own thread on the PR (Jian previews the text first)
