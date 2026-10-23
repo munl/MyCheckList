@@ -37,11 +37,15 @@ class TestChecklists(
         return UUID.fromString(JsonPath.read(body, "$.id"))
     }
 
-    /** Looks up (creating if needed) the user row behind a test token, then adds them to a list. */
-    fun addMember(listId: UUID, who: RequestPostProcessor, role: MemberRole) {
+    /** The user ID behind a test token, creating the user row on first use. */
+    fun userId(who: RequestPostProcessor): UUID {
         val email = mvc.get("/api/me") { with(who) }.andExpect { status { isOk() } }.andReturn().response.contentAsString
             .let { JsonPath.read<String>(it, "$.email") }
-        val user = users.findByEmail(email)!!
-        members.save(ChecklistMember(ChecklistMemberId(listId, user.id!!), role))
+        return users.findByEmail(email)!!.id!!
+    }
+
+    /** Adds the user behind a test token to a list. */
+    fun addMember(listId: UUID, who: RequestPostProcessor, role: MemberRole) {
+        members.save(ChecklistMember(ChecklistMemberId(listId, userId(who)), role))
     }
 }
