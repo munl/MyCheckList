@@ -1,6 +1,7 @@
 package com.mychecklist.checklist
 
 import com.jayway.jsonpath.JsonPath
+import com.mychecklist.checklist.data.ChecklistMemberRepository
 import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
@@ -32,6 +33,7 @@ import kotlin.test.assertFalse
 class RemovedMemberAccessTest @Autowired constructor(
     private val mvc: MockMvc,
     private val checklists: TestChecklists,
+    private val members: ChecklistMemberRepository,
     private val jdbc: JdbcTemplate,
 ) {
 
@@ -121,5 +123,18 @@ class RemovedMemberAccessTest @Autowired constructor(
             status { isOk() }
             jsonPath("$.myRole") { value("OWNER") }
         }
+    }
+
+    @Test
+    fun `a removed owner row doesn't count towards the owned-lists limit`() {
+        // Checked on the count query itself, since reaching the real limit would take 200 lists.
+        val owner = signedIn("owner")
+        val ownerId = checklists.userId(owner)
+        val id = checklists.createList(owner)
+        assertEquals(1, members.countByIdUserIdAndRoleAndRemovedAtIsNull(ownerId, MemberRole.OWNER))
+
+        markRemoved(id, owner)
+
+        assertEquals(0, members.countByIdUserIdAndRoleAndRemovedAtIsNull(ownerId, MemberRole.OWNER))
     }
 }
