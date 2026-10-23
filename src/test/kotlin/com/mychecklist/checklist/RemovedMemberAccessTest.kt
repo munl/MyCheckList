@@ -1,5 +1,6 @@
 package com.mychecklist.checklist
 
+import com.jayway.jsonpath.JsonPath
 import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
@@ -17,6 +18,8 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 import java.util.UUID
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 /**
  * Members are soft removed: leaving or being removed sets `checklist_members.removed_at`
@@ -43,6 +46,15 @@ class RemovedMemberAccessTest @Autowired constructor(
         )
         check(updated == 1) { "expected one member row to mark removed, got $updated" }
     }
+
+    /** The caller's `GET /api/checklists` response, one map per list. */
+    private fun myLists(who: RequestPostProcessor): List<Map<String, Any?>> {
+        val body = mvc.get("/api/checklists") { with(who) }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+        return JsonPath.read(body, "$")
+    }
+
+    private fun myListIds(who: RequestPostProcessor): List<UUID> = myLists(who).map { UUID.fromString(it["id"] as String) }
 
     /** A list with an owner and an editor, where the editor has been removed. */
     private fun listWithRemovedEditor(): Triple<UUID, RequestPostProcessor, RequestPostProcessor> {
@@ -81,10 +93,7 @@ class RemovedMemberAccessTest @Autowired constructor(
     fun `the list no longer appears in a removed member's lists`() {
         val (id, _, removed) = listWithRemovedEditor()
 
-        mvc.get("/api/checklists") { with(removed) }.andExpect {
-            status { isOk() }
-            jsonPath("$[?(@.id == '$id')]") { isEmpty() }
-        }
+        assertFalse(id in myListIds(removed))
     }
 
     // --- counts and constraints ---------------------------------------------
@@ -97,9 +106,8 @@ class RemovedMemberAccessTest @Autowired constructor(
             status { isOk() }
             jsonPath("$.memberCount") { value(1) }
         }
-        mvc.get("/api/checklists") { with(owner) }.andExpect {
-            jsonPath("$[?(@.id == '$id')].memberCount") { value(listOf(1)) }
-        }
+        val inMyLists = myLists(owner).single { it["id"] == id.toString() }
+        assertEquals(1, inMyLists["memberCount"])
     }
 
     @Test
