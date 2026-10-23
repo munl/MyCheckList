@@ -11,28 +11,26 @@ The database now supports **repeating lists, stars, streaks and rewards**. The s
 
 The Members API has started: removed members now lose access (soft removal), and `MemberService.addOrRestore` is the one way to add someone to a list.
 
-`./gradlew test` passes **29 of 29** (2026-10-23, fresh run, on branch `2-3-removed-members-lose-access`).
+`./gradlew test` passes **29 of 29** (2026-10-23, fresh run; merged to `main` in PR #16).
 
 - **Repo:** [github.com/munl/MyCheckList](https://github.com/munl/MyCheckList), branch `main`
 - **Firebase project ID:** `mychecklist-e745d` (the default in config)
-- **Done:** database schema (including schedules, occurrences, stars and rewards), Firebase sign-in, user records, the super admin role, Docker and Kubernetes setup, the authorization layer, the checklists API
-- **In review:** [PR #16](https://github.com/munl/MyCheckList/pull/16), removed members lose access (#2/#3). Reviewed with `/review-pr`; all threads resolved
+- **Done:** database schema (including schedules, occurrences, stars and rewards), Firebase sign-in, user records, the super admin role, Docker and Kubernetes setup, the authorization layer, the checklists API, shared test helpers (#1), removed members lose access and rejoin with their stars (#2/#3)
 - **Next:** the rest of the Members API (#4–#13, built test-first), then the Invitations API, then the Items and Occurrences API (which includes earning stars)
 
 ### Pick up here
 
-1. Merge [PR #16](https://github.com/munl/MyCheckList/pull/16) (#2/#3). [#1](https://github.com/munl/MyCheckList/issues/1) is done (PR #14).
-2. Carry on with the **Members API**, one ticket pair at a time: next is [#6](https://github.com/munl/MyCheckList/issues/6)/[#7](https://github.com/munl/MyCheckList/issues/7) (list members). The rules are in [Members API](#members-api) below. Each pair is a Tests ticket (written first) and a Build ticket, on one branch and one PR.
-3. Build the **Invitations API**: invite by email (EDITOR+, and only the OWNER can invite editors), the inbox at `/api/me/invitations`, accept or decline, revoke, expiry. Responses must not reveal whether an email has an account. Follow the email privacy rules and "Repeat invites and reminders" in Decisions. Inbox only; no email sending in V1. Accepting must go through `MemberService.addOrRestore`, and fix [#17](https://github.com/munl/MyCheckList/issues/17) (two accepts at once) at the same time.
-4. Build the **Schedule, Items and Occurrences API**. See [Repeating lists](#repeating-lists) and [Stars and rewards](#stars-and-rewards) below for the rules. Assigning must follow the "Assigning" rule in Decisions.
-5. Every endpoint goes through `ChecklistAccessService.requireAccess`, with tests for outsiders (404) and roles that are too low (403).
-6. In parallel: finish Firebase Google sign-in and call `GET /api/me` with a real token from the Android app.
+1. Carry on with the **Members API**, one ticket pair at a time: next is [#6](https://github.com/munl/MyCheckList/issues/6)/[#7](https://github.com/munl/MyCheckList/issues/7) (list members). The rules are in [Members API](#members-api) below. Each pair is a Tests ticket (written first) and a Build ticket, on one branch and one PR.
+2. Build the **Invitations API**: invite by email (EDITOR+, and only the OWNER can invite editors), the inbox at `/api/me/invitations`, accept or decline, revoke, expiry. Responses must not reveal whether an email has an account. Follow the email privacy rules and "Repeat invites and reminders" in Decisions. Inbox only; no email sending in V1. Accepting must go through `MemberService.addOrRestore`, and fix [#17](https://github.com/munl/MyCheckList/issues/17) (two accepts at once) at the same time.
+3. Build the **Schedule, Items and Occurrences API**. See [Repeating lists](#repeating-lists) and [Stars and rewards](#stars-and-rewards) below for the rules. Assigning must follow the "Assigning" rule in Decisions.
+4. Every endpoint goes through `ChecklistAccessService.requireAccess`, with tests for outsiders (404) and roles that are too low (403).
+5. In parallel: finish Firebase Google sign-in and call `GET /api/me` with a real token from the Android app.
 
 ### How we work on a ticket
 
 1. **Never commit straight to `main`.** Make one branch per ticket pair, with the issue numbers first: e.g. `12-13-transfer-ownership` for the tests ticket #12 and the build ticket #13.
 2. Write the tests first, then the code, until `./gradlew test` passes in full.
-3. Open a PR (put `Closes #12, #13` in the description).
+3. Open a PR (put `Closes #12, closes #13` in the description: GitHub needs the keyword before **each** number, or only the first issue closes).
 4. Run **`/review-pr`** (the skill is in `.claude/skills/review-pr/SKILL.md`). A separate reviewer agent lists the risks: anything that could break behaviour, open a security hole or lose data. No style nitpicks. It skips risks that another open ticket already plans, decisions recorded below, and things already raised on the PR.
 5. Reply with a choice for each risk, e.g. `fix 1,3 · backlog 2 · drop 4 (fine for MVP) · discuss 5`. Then:
    - each risk gets its own thread on the PR (Jian previews the text first)
@@ -241,14 +239,16 @@ The source code is under `src/main/kotlin/com/mychecklist/`, organized **by feat
 | `config/` | `SecurityConfig` (every `/api/**` request needs a Firebase token), `AppProperties`, `WebConfig` |
 | `common/error/` | `NotFound` / `Forbidden` / `Conflict` / `BadRequest` exceptions, turned into problem JSON |
 | `user/` | `UserService` (token → user row), `@CurrentUser`; `api/` `GET /api/me`; `domain/` `User`; `data/` `UserRepository` |
-| `checklist/` | `ChecklistAccessService` (**the permission check**: every checklist, member, invite, item and reward operation must call `requireAccess`), `ChecklistService`; `api/` controller and DTOs; `domain/` `Checklist`, `ChecklistMember` (with star and streak totals), `MemberRole` |
+| `checklist/` | `ChecklistAccessService` (**the permission check**: every checklist, member, invite, item and reward operation must call `requireAccess`), `ChecklistService`, `MemberService` (`addOrRestore`: **the only way to add someone to a list**; restores a removed member's row); `api/` controller and DTOs; `domain/` `Checklist`, `ChecklistMember` (with star and streak totals and `removedAt`), `MemberRole` |
 | `invitation/`, `item/`, `schedule/` | Entities and repositories for invitations, template items and assignees, and repeat rules |
 | `occurrence/` | Occurrences, their item copies and assignees, member results; `OccurrenceItemRepository.completeIfOpen` (first one wins) |
 | `stars/`, `reward/` | The star ledger; rewards and redemptions |
 | `admin/` | `AdminAuditService` (audit rows), `GET /api/admin/users` |
 | `src/test/.../SchemaAndUserSyncTest.kt` | Schema, user sync, "first one wins" with a helper, schedule weekdays, award-once tests |
 | `src/test/.../checklist/ChecklistApiTest.kt` | API tests: each role, super admin, archived lists, validation, time zones, 401 |
-| `src/test/.../support/` | `TestcontainersConfig` (shared throwaway Postgres) |
+| `src/test/.../checklist/RemovedMemberAccessTest.kt` | Removed members: 404 on reads and writes, gone from their lists (active and archived), not in `memberCount`, one-owner index and owned-lists limit |
+| `src/test/.../checklist/MemberRejoinTest.kt` | `addOrRestore`: rejoin keeps stars, active members unchanged, no OWNER, archived (409) and missing (404) lists |
+| `src/test/.../support/` | `TestcontainersConfig` (shared throwaway Postgres), `TestUsers.kt` (`signedIn`, `superAdmin`), `TestChecklists` (`createList`, `addMember`, `userId`, `insertOwnerRow`) |
 | `Dockerfile`, `docker-compose.yml`, `k8s/` | Container image, local Postgres 17, Kubernetes manifests |
 | `.claude/skills/review-pr/SKILL.md` | The `/review-pr` skill: the risk review on an open PR (see [How we work on a ticket](#how-we-work-on-a-ticket)) |
 | `scripts/create-github-issues.sh` | Creates the V1 backlog as GitHub issues (`gh` CLI). Tickets are on hold for now |
@@ -306,7 +306,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 - [x] Reorganize the code into feature packages (`api/`, `domain/`, `data/`); 16 of 16 tests pass
 - [ ] Set up Firebase Google sign-in and test `/api/me` with a real token (in progress)
 - [x] Plan the Members API and create its tickets (#1–#13)
-- [ ] **Members API:** list, change role, remove, leave, transfer ownership (#1–#13). Done: #1 (PR #14). In review: #2/#3 (PR #16)
+- [ ] **Members API:** list, change role, remove, leave, transfer ownership (#1–#13). Done: #1 (PR #14), #2/#3 (PR #16)
 - [ ] **Invitations API:** invite by email, inbox, accept or decline, revoke
 - [ ] **Schedule API:** set, change or remove a list's repeat rule, and preview its next dates
 - [ ] **Items and Occurrences API:** template items (add, edit, reorder, assign); today's occurrence (get or create, tick and untick, "my items" and "unassigned" filters); history
@@ -334,7 +334,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 
 | Date | What was done |
 | --- | --- |
-| 2026-10-23 (later) | Confirmed the last open #10 rule: stars a removed member already earned today are kept. Updated issue #10. Merged #1 (shared test helpers in `support/`, PR #14). Built #2/#3 (removed members lose access) on one branch: `removed_at`, a one-owner index that ignores removed members, and every member query skipping them. Removed members also don't count in `memberCount` (new rule on #2). Added a test that the owned-lists limit ignores removed owner rows. Decided that a transfer to someone at the 200-list limit gets 409, and added that rule to #12/#13. Opened PR #16 for #2/#3 and ran `/review-pr` three times (a full review, a short re-review of the fixes, then a full re-review): 8 risks in total, 7 fixed and 1 backlogged as #17. The fixes added `MemberService.addOrRestore` (restores a removed member's row with their stars and streaks; leaves active members as they are; refuses OWNER; 409 on archived lists, 404 on missing ones) and an "Assigning" rule. Recorded the repeat-invite and reminder decisions. 29 of 29 tests pass |
+| 2026-10-23 (later) | Confirmed the last open #10 rule: stars a removed member already earned today are kept. Updated issue #10. Merged #1 (shared test helpers in `support/`, PR #14). Built #2/#3 (removed members lose access) on one branch: `removed_at`, a one-owner index that ignores removed members, and every member query skipping them. Removed members also don't count in `memberCount` (new rule on #2). Added a test that the owned-lists limit ignores removed owner rows. Decided that a transfer to someone at the 200-list limit gets 409, and added that rule to #12/#13. Opened PR #16 for #2/#3 and ran `/review-pr` three times (a full review, a short re-review of the fixes, then a full re-review): 8 risks in total, 7 fixed and 1 backlogged as #17. The fixes added `MemberService.addOrRestore` (restores a removed member's row with their stars and streaks; leaves active members as they are; refuses OWNER; 409 on archived lists, 404 on missing ones) and an "Assigning" rule. Recorded the repeat-invite and reminder decisions. 29 of 29 tests pass. Merged PR #16; #3 had to be closed by hand because the PR said `Closes #2, #3`, so the workflow now says `Closes #12, closes #13` |
 | 2026-10-23 | Designed and added the `/review-pr` skill with Jian (committed on `main` as an agreed exception). Agreed the workflow: never commit to `main`; one branch and PR per ticket pair; a separate reviewer agent reports every high risk plus medium ones up to 6, each with where, why, a failure scenario, a suggested fix and what else it affects; it skips what open tickets, recorded decisions or earlier PR threads already cover. Decisions are posted as one inline PR thread per risk, then each thread is answered and resolved. Backlog items become `backlog` issues on the board |
 | 2026-10-22 | Planned the Members API test-first. Decided: soft removal (`removed_at`) with clean-up, transfer to any member with the old owner becoming an editor, the owner must transfer before leaving, the members list shows stars to everyone and emails to the owner only, and only leaving works on archived lists. Created GitHub issues #1–#13 as test/build pairs, with labels and the "V1 API" milestone |
 | 2026-10-21 | Worked through the open questions. Invites: inbox only in V1, Resend email as a later nice-to-have, plus email privacy rules. Confirmed that all custom queries use bound parameters and recorded a "no string-built SQL" rule. Ran `./gradlew test` after the reorganization and storage controls: 16 of 16 pass. Star tiers stay global; the client app will suggest reward costs by size. Push notifications through FCM: the streak-at-risk reminder is in V1 (3 hours before the list's deadline, quiet hours in each person's own zone); invite, reward-request, approval and team-finished notifications are recorded for later |
