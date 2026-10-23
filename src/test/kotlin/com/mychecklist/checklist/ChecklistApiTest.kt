@@ -1,20 +1,18 @@
 package com.mychecklist.checklist
 
-import com.jayway.jsonpath.JsonPath
 import com.mychecklist.admin.data.AdminAuditLogRepository
-import com.mychecklist.checklist.data.ChecklistMemberRepository
-import com.mychecklist.checklist.domain.ChecklistMember
-import com.mychecklist.checklist.domain.ChecklistMemberId
 import com.mychecklist.checklist.domain.MemberRole
+import com.mychecklist.support.SUPER_ADMIN_EMAIL
+import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
-import com.mychecklist.user.data.UserRepository
+import com.mychecklist.support.signedIn
+import com.mychecklist.support.superAdmin
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
-import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
@@ -27,55 +25,19 @@ import kotlin.test.assertTrue
 
 /**
  * End-to-end tests of the checklist endpoints and the permission rules behind them.
- * Requests go through the real Spring Security filter chain; `jwt()` stands in for a
- * verified Firebase token. Each test uses fresh users so tests don't affect each other.
+ * Requests go through the real Spring Security filter chain with fake Firebase tokens
+ * (see `support/`). Each test uses fresh users so tests don't affect each other.
  */
-@SpringBootTest(properties = ["app.super-admin-emails=boss@example.com"])
+@SpringBootTest(properties = ["app.super-admin-emails=$SUPER_ADMIN_EMAIL"])
 @AutoConfigureMockMvc
-@Import(TestcontainersConfig::class)
+@Import(TestcontainersConfig::class, TestChecklists::class)
 class ChecklistApiTest @Autowired constructor(
     private val mvc: MockMvc,
-    private val users: UserRepository,
-    private val members: ChecklistMemberRepository,
+    private val checklists: TestChecklists,
     private val auditLog: AdminAuditLogRepository,
 ) {
 
     // --- helpers ------------------------------------------------------------
-
-    /** A signed-in test user, identified by a fake Firebase token. */
-    private fun signedIn(
-        name: String,
-        email: String = "$name-${UUID.randomUUID()}@example.com",
-        uid: String = "uid-$email",
-    ): RequestPostProcessor =
-        jwt().jwt {
-            it.subject(uid)
-                .claim("email", email)
-                .claim("email_verified", true)
-                .claim("name", name)
-        }
-
-    /** Matches app.super-admin-emails above (same uid as SchemaAndUserSyncTest, in case they share a database). */
-    private val superAdmin = signedIn("boss", email = "boss@example.com", uid = "uid-boss")
-
-    private fun createList(who: RequestPostProcessor, title: String = "Camping trip"): UUID {
-        val body = mvc.post("/api/checklists") {
-            with(who)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"title": "$title", "description": "Things to pack"}"""
-        }.andExpect {
-            status { isCreated() }
-        }.andReturn().response.contentAsString
-        return UUID.fromString(JsonPath.read(body, "$.id"))
-    }
-
-    /** Looks up (creating if needed) the user row behind a test token, then adds them to a list. */
-    private fun addMember(listId: UUID, who: RequestPostProcessor, role: MemberRole) {
-        val email = mvc.get("/api/me") { with(who) }.andExpect { status { isOk() } }.andReturn().response.contentAsString
-            .let { JsonPath.read<String>(it, "$.email") }
-        val user = users.findByEmail(email)!!
-        members.save(ChecklistMember(ChecklistMemberId(listId, user.id!!), role))
-    }
 
     private fun rename(listId: UUID, who: RequestPostProcessor, title: String = "Renamed") =
         mvc.patch("/api/checklists/$listId") {
@@ -89,7 +51,7 @@ class ChecklistApiTest @Autowired constructor(
     @Test
     fun `owner can create, read, rename, archive, unarchive and delete a list`() {
         val owner = signedIn("owner")
-        val id = createList(owner)
+        val id = checklists.createList(owner)
 
         mvc.get("/api/checklists/$id") { with(owner) }.andExpect {
             status { isOk() }
@@ -140,7 +102,7 @@ class ChecklistApiTest @Autowired constructor(
 
     @Test
     fun `outsiders get 404 for everything, the same as for a list that doesn't exist`() {
-        val id = createList(signedIn("owner"))
+        val id = checklists.createList(signedIn("owner"))
         val outsider = signedIn("outsider")
 
         mvc.get("/api/checklists/$id") { with(outsider) }.andExpect { status { isNotFound() } }
@@ -158,9 +120,9 @@ class ChecklistApiTest @Autowired constructor(
 
     @Test
     fun `viewers can read but not change anything`() {
-        val id = createList(signedIn("owner"))
+        val id = checklists.createList(signedIn("owner"))
         val viewer = signedIn("viewer")
-        addMember(id, viewer, MemberRole.VIEWER)
+        checklists.addMember(id, viewer, MemberRole.VIEWER)
 
         mvc.get("/api/checklists/$id") { with(viewer) }.andExpect {
             status { isOk() }
@@ -174,9 +136,9 @@ class ChecklistApiTest @Autowired constructor(
 
     @Test
     fun `editors can edit but not archive or delete`() {
-        val id = createList(signedIn("owner"))
+        val id = checklists.createList(signedIn("owner"))
         val editor = signedIn("editor")
-        addMember(id, editor, MemberRole.EDITOR)
+        checklists.addMember(id, editor, MemberRole.EDITOR)
 
         rename(id, editor, "Edited by editor").andExpect { status { isOk() } }
         mvc.post("/api/checklists/$id/archive") { with(editor) }.andExpect { status { isForbidden() } }
@@ -186,7 +148,7 @@ class ChecklistApiTest @Autowired constructor(
     @Test
     fun `archived lists are read-only`() {
         val owner = signedIn("owner")
-        val id = createList(owner)
+        val id = checklists.createList(owner)
         mvc.post("/api/checklists/$id/archive") { with(owner) }.andExpect { status { isOk() } }
 
         mvc.get("/api/checklists/$id") { with(owner) }.andExpect { status { isOk() } }
@@ -195,7 +157,7 @@ class ChecklistApiTest @Autowired constructor(
 
     @Test
     fun `super admin can change any list and the change is audited`() {
-        val id = createList(signedIn("owner"))
+        val id = checklists.createList(signedIn("owner"))
 
         rename(id, superAdmin, "Fixed by admin").andExpect {
             status { isOk() }
@@ -209,7 +171,7 @@ class ChecklistApiTest @Autowired constructor(
     @Test
     fun `owners editing their own list are not audited`() {
         val owner = signedIn("owner")
-        val id = createList(owner)
+        val id = checklists.createList(owner)
         rename(id, owner).andExpect { status { isOk() } }
         assertTrue(auditLog.findAll().none { it.targetId == id })
     }
@@ -263,14 +225,14 @@ class ChecklistApiTest @Autowired constructor(
             content = """{"title": "Chores", "timeZone": "Mars/Olympus"}"""
         }.andExpect { status { isBadRequest() } }
 
-        val id = createList(owner)
+        val id = checklists.createList(owner)
         mvc.get("/api/checklists/$id") { with(owner) }.andExpect { jsonPath("$.timeZone") { value("UTC") } }
     }
 
     @Test
     fun `delete requires explicit confirmation`() {
         val owner = signedIn("owner")
-        val id = createList(owner)
+        val id = checklists.createList(owner)
         mvc.delete("/api/checklists/$id") { with(owner) }.andExpect { status { isBadRequest() } }
         mvc.get("/api/checklists/$id") { with(owner) }.andExpect { status { isOk() } }
     }
