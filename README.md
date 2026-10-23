@@ -6,7 +6,7 @@ The backend for a shared checklist app. Users sign in with Google through Fireba
 
 **Progress, decisions and next steps:** [docs/PROGRESS.md](docs/PROGRESS.md)
 
-**Status:** Firebase auth, the permission layer and the checklists API are done. The schema now includes repeating lists, stars, streaks and rewards. Their APIs are next, along with members and invitations.
+**Status:** Firebase auth, the permission layer and the checklists API are done. The Members API has started: removed members lose access, and rejoin with their stars and streaks. The schema includes repeating lists, stars, streaks and rewards; their APIs are next, after the rest of members and invitations.
 
 ---
 
@@ -155,7 +155,7 @@ src/main/kotlin/com/mychecklist/
 │   ├── api/         MeController, UserResponse
 │   ├── domain/      User, PlatformRole
 │   └── data/        UserRepository
-├── checklist/       ChecklistService, ChecklistAccessService (permissions)
+├── checklist/       ChecklistService, ChecklistAccessService (permissions), MemberService
 │   ├── api/         ChecklistController, ChecklistDtos
 │   ├── domain/      Checklist, ChecklistMember, MemberRole
 │   └── data/        ChecklistRepository, ChecklistMemberRepository
