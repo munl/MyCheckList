@@ -116,6 +116,10 @@ To tear it all down: `kubectl delete -k k8s/`
 
 The report is at `build/reports/tests/test/index.html`. API tests use fake tokens (`jwt()`), so no real Firebase account is needed.
 
+## Working on a ticket
+
+Never commit straight to `main`. Make one branch per ticket pair (e.g. `12-13-transfer-ownership`), write the tests first, then open a PR and run `/review-pr` in Claude Code. It lists the risks in the PR, you choose fix / backlog / drop / discuss for each, and every risk ends as a resolved PR thread. Full steps: [docs/PROGRESS.md](docs/PROGRESS.md#how-we-work-on-a-ticket).
+
 ## Try the API
 
 Get an ID token in your app with `Firebase.auth.currentUser?.getIdToken(false)`, then:

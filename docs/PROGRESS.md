@@ -3,7 +3,7 @@
 > **This file is the main record of project progress.** Update it at the end of every work session: the status, the roadmap checkboxes and the session log.
 > Shareable view (may lag behind this file): [Claude Doc](https://claude.ai/code/artifact/723d9711-56f2-47bb-8819-1605d8fa82c1)
 
-Last updated: 2026-10-22
+Last updated: 2026-10-23
 
 ## Status
 
@@ -23,6 +23,19 @@ The database now supports **repeating lists, stars, streaks and rewards**. The s
 3. Build the **Schedule, Items and Occurrences API**. See [Repeating lists](#repeating-lists) and [Stars and rewards](#stars-and-rewards) below for the rules.
 4. Every endpoint goes through `ChecklistAccessService.requireAccess`, with tests for outsiders (404) and roles that are too low (403).
 5. In parallel: finish Firebase Google sign-in and call `GET /api/me` with a real token from the Android app.
+
+### How we work on a ticket
+
+1. **Never commit straight to `main`.** Make one branch per ticket pair, with the issue numbers first: e.g. `12-13-transfer-ownership` for the tests ticket #12 and the build ticket #13.
+2. Write the tests first, then the code, until `./gradlew test` passes in full.
+3. Open a PR (put `Closes #12, #13` in the description).
+4. Run **`/review-pr`** (the skill is in `.claude/skills/review-pr/SKILL.md`). A separate reviewer agent lists the risks: anything that could break behaviour, open a security hole or lose data. No style nitpicks. It skips risks that another open ticket already plans, decisions recorded below, and things already raised on the PR.
+5. Reply with a choice for each risk, e.g. `fix 1,3 · backlog 2 · drop 4 (fine for MVP) · discuss 5`. Then:
+   - each risk gets its own thread on the PR (Jian previews the text first)
+   - fixes are done test-first, one commit each, and pushed after Jian's OK
+   - backlog items become single GitHub issues labelled `backlog`, on the project board
+   - drops can be recorded in Decisions
+6. Each thread gets a reply with the outcome (commit, issue link or reason) and is then resolved. **No open threads = review done.** Re-run `/review-pr` for a full re-review.
 
 ### About the database and migrations
 
@@ -47,6 +60,7 @@ No real database has been created yet. `./gradlew test` uses a temporary Postgre
 | Invites | By email, into an in-app inbox to accept or decline. **V1 ships with the inbox only.** Invite emails are a nice-to-have for later and will use **Resend** (free tier: 3,000 a month, 100 a day; Brevo, at 300 a day, is the fallback). The invite code is built so email can be added without changing the API: the invite and a "send email" job are saved in one transaction, and a background job sends the email and retries. A failed or skipped email never breaks the invite | So invites don't depend on email; sending needs our own domain (~$10–15 a year) for SPF/DKIM |
 | Email privacy | Show emails only where needed (members list: names, and emails to owners at most). Never log email addresses (mask them, e.g. `j***@gmail.com`). Invite responses never reveal whether an account exists. Clear the email from declined, revoked and expired invites after ~30 days. When email sending arrives: one recipient per message, no free-form inviter text, rate limits on invites, an opt-out, and the API key kept in env vars or a Kubernetes Secret. No column-level encryption in V1 | Covers the realistic ways addresses leak. Encryption would need a blind-index lookup column and key management, and Firebase already holds the same addresses |
 | SQL injection | Every query uses bound parameters: Spring Data derived queries, or `@Query` with `:named` params. **Never build SQL or JPQL by joining or interpolating strings**, including for sorting and filtering (use an allowlist of column names). All input is validated with Bean Validation (`@Email`, `@Size`...) before it reaches a service | Checked 2026-10-21: all 8 custom queries are parameterized |
+| Code review | Every change goes on a branch and a PR. `/review-pr` finds risks; Jian decides fix / backlog / drop / discuss for each. One resolved PR thread per risk, with a "Review drafted with Claude Code" footer. Only open tickets count as "already planned" | Catches real breakage without nitpicks, keeps a record on the PR, and stops review findings from getting lost or duplicating planned tickets |
 | Assignment | Zero, one or many assignees per item; a list can be filtered by person | Works for both single-owner and shared tasks |
 | Completion | "First one wins": the first tick completes the item for everyone. **Helping counts**, so if someone else ticks your item, it counts for you | Encourages helping each other |
 | Repeating lists | Every list is a **template**; each day or week it's due gets its own **occurrence** (a fresh copy). A one-time list has exactly one occurrence | One model for both kinds of list, with full history |
@@ -230,6 +244,7 @@ The source code is under `src/main/kotlin/com/mychecklist/`, organized **by feat
 | `src/test/.../checklist/ChecklistApiTest.kt` | API tests: each role, super admin, archived lists, validation, time zones, 401 |
 | `src/test/.../support/` | `TestcontainersConfig` (shared throwaway Postgres) |
 | `Dockerfile`, `docker-compose.yml`, `k8s/` | Container image, local Postgres 17, Kubernetes manifests |
+| `.claude/skills/review-pr/SKILL.md` | The `/review-pr` skill: the risk review on an open PR (see [How we work on a ticket](#how-we-work-on-a-ticket)) |
 | `scripts/create-github-issues.sh` | Creates the V1 backlog as GitHub issues (`gh` CLI). Tickets are on hold for now |
 
 **Endpoints so far**
@@ -296,6 +311,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 - [ ] **Push notifications (V1):** FCM setup (service account as a secret), device token register and unregister, notification preferences, the streak-at-risk job (3 hours before the list's deadline, quiet hours in the person's zone, once per day)
 - [ ] Later notifications: invite received, reward request, request approved or rejected, team finished
 - [ ] Later: invite emails through Resend (needs our own domain)
+- [x] Code review workflow: the `/review-pr` skill
 - [ ] CI (GitHub Actions) and Dependabot
 - [ ] API docs (OpenAPI/Swagger) for the mobile client
 - [ ] Security hardening, then deploy online: Neon plus a container host
@@ -312,6 +328,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 
 | Date | What was done |
 | --- | --- |
+| 2026-10-23 | Designed and added the `/review-pr` skill with Jian (committed on `main` as an agreed exception). Agreed the workflow: never commit to `main`; one branch and PR per ticket pair; a separate reviewer agent reports every high risk plus medium ones up to 6, each with where, why, a failure scenario, a suggested fix and what else it affects; it skips what open tickets, recorded decisions or earlier PR threads already cover. Decisions are posted as one inline PR thread per risk, then each thread is answered and resolved. Backlog items become `backlog` issues on the board |
 | 2026-10-22 | Planned the Members API test-first. Decided: soft removal (`removed_at`) with clean-up, transfer to any member with the old owner becoming an editor, the owner must transfer before leaving, the members list shows stars to everyone and emails to the owner only, and only leaving works on archived lists. Created GitHub issues #1–#13 as test/build pairs, with labels and the "V1 API" milestone |
 | 2026-10-21 | Worked through the open questions. Invites: inbox only in V1, Resend email as a later nice-to-have, plus email privacy rules. Confirmed that all custom queries use bound parameters and recorded a "no string-built SQL" rule. Ran `./gradlew test` after the reorganization and storage controls: 16 of 16 pass. Star tiers stay global; the client app will suggest reward costs by size. Push notifications through FCM: the streak-at-risk reminder is in V1 (3 hours before the list's deadline, quiet hours in each person's own zone); invite, reward-request, approval and team-finished notifications are recorded for later |
 | 2026-10-15 (evening) | Reviewed storage growth (it's linear, about 2 MB per year for a 10-item daily list). Agreed on three ways to keep it down: lazy occurrences, compacting history after 90 days, and auto-pausing lists after 14 days without activity. Schema: `checklists.last_activity_at`, `checklist_schedules.paused_at`, and `item_count`, `completed_item_count` and `compacted_at` on occurrences. Config: `app.history.full-detail-days=90`, `app.schedule.auto-pause-after-days=14`. V1 was edited in place again, since there's still no persistent database |
