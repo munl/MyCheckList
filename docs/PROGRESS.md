@@ -3,7 +3,7 @@
 > **This file is the main record of project progress.** Update it at the end of every work session: the status, the roadmap checkboxes and the session log.
 > Shareable view (may lag behind this file): [Claude Doc](https://claude.ai/code/artifact/723d9711-56f2-47bb-8819-1605d8fa82c1)
 
-Last updated: 2026-10-21
+Last updated: 2026-10-22
 
 ## Status
 
@@ -14,11 +14,11 @@ The database now supports **repeating lists, stars, streaks and rewards**. The s
 - **Repo:** [github.com/munl/MyCheckList](https://github.com/munl/MyCheckList), branch `main`
 - **Firebase project ID:** `mychecklist-e745d` (the default in config)
 - **Done:** database schema (including schedules, occurrences, stars and rewards), Firebase sign-in, user records, the super admin role, Docker and Kubernetes setup, the authorization layer, the checklists API
-- **Next:** the Members and Invitations API, then the Items and Occurrences API (which includes earning stars)
+- **Next:** the Members API (planned as 13 GitHub tickets, built test-first), then the Invitations API, then the Items and Occurrences API (which includes earning stars)
 
 ### Pick up here
 
-1. Build the **Members API**: list members, change role (EDITOR ⇄ VIEWER), remove a member, leave a list, transfer ownership. The owner can't be removed or demoted directly.
+1. Build the **Members API** one ticket at a time, starting with [#1](https://github.com/munl/MyCheckList/issues/1). The rules are in [Members API](#members-api) below. Each piece is a Tests ticket (tests merged with `@Disabled`), then a Build ticket that switches them on.
 2. Build the **Invitations API**: invite by email (EDITOR+, and only the OWNER can invite editors), the inbox at `/api/me/invitations`, accept or decline, revoke, expiry. Responses must not reveal whether an email has an account. Follow the email privacy rules in Decisions. Inbox only; no email sending in V1.
 3. Build the **Schedule, Items and Occurrences API**. See [Repeating lists](#repeating-lists) and [Stars and rewards](#stars-and-rewards) below for the rules.
 4. Every endpoint goes through `ChecklistAccessService.requireAccess`, with tests for outsiders (404) and roles that are too low (403).
@@ -70,6 +70,9 @@ No real database has been created yet. `./gradlew test` uses a temporary Postgre
 | Auto-pause | Repeating lists that nobody has opened for **14 days** (`app.schedule.auto-pause-after-days`) are paused: no new days, and missed days don't break streaks. Opening the list resumes it | No growth from lists people stopped using |
 | Push notifications | **Firebase Cloud Messaging** (free, no message limits). The server sends through the Firebase Admin SDK, which needs a service account key kept in an env var or Kubernetes Secret, never in git. New tables: `device_tokens` (registered after sign-in, deleted on sign-out or when FCM rejects them, stored with the phone's time zone) and per-person notification preferences. Notification text has no email addresses or item details (lock screens are visible). Every type can be turned off | FCM is already part of the Firebase project |
 | Streak-at-risk reminder (V1) | Sent **3 hours before the list's deadline** (midnight in the **list's** time zone, so 9 pm list time; `app.notifications.streak-reminder-hours-before=3`). Goes only to members with unfinished items assigned to them in today's occurrence, on repeating lists that aren't paused. **Quiet hours:** skipped if it would land between 10 pm and 8 am in the *person's own* time zone (from their device). At most one per person per list per day | Timing from the list's deadline is correct for every member wherever they are; quiet hours stop a member in a different zone from being woken up |
+| Building features | **Test-first (TDD).** Agree the rules by questions, write the tests from them as their own ticket (merged with `@Disabled("Waiting on #N")` so `main` stays green), then a Build ticket switches them on and writes the code. A test is only changed after checking the rule with Jian. Small tickets and small PRs, one piece at a time | So tests check the agreed rules, not whatever the code happens to do |
+| Removing members | **Soft removal:** leaving or being removed sets `checklist_members.removed_at`; the row is kept. They lose access at once (404, like an outsider). They're unassigned from the template and today's open copy (closed days untouched), and pending reward requests are cancelled and refunded. A rejoin restores the same row with their old stars and streaks | Keeps star history and past days complete, and the cached balance consistent with the ledger |
+| Ownership | Transfer to any active member, immediately, no accept step; the old owner becomes an editor. The owner can't leave or be removed until they transfer. Only the owner changes roles or removes members | A list always has exactly one owner |
 | Other notifications (later) | Invite received; reward request (to owners and editors); request approved or rejected; team finished (everyone gets the bonus) | Agreed as good ideas, not in V1 |
 
 ## Data model
@@ -126,6 +129,30 @@ erDiagram
 | Reward costs are 1–100,000 stars | CHECK |
 | Emails are lowercase | CHECK constraints on `users.email` and `checklist_invitations.invitee_email` |
 | `updated_at` stays correct, even for edits made directly in SQL | Database triggers |
+
+## Members API
+
+Planned 2026-10-22 as [GitHub issues #1–#13](https://github.com/munl/MyCheckList/issues) (milestone "V1 API"), built in this order:
+
+| # | Ticket |
+| --- | --- |
+| [#1](https://github.com/munl/MyCheckList/issues/1) | Setup: move shared test helpers into `support/` |
+| [#2](https://github.com/munl/MyCheckList/issues/2) / [#3](https://github.com/munl/MyCheckList/issues/3) | Removed members lose access (`removed_at`): tests / build |
+| [#6](https://github.com/munl/MyCheckList/issues/6) / [#7](https://github.com/munl/MyCheckList/issues/7) | List members: tests / build |
+| [#4](https://github.com/munl/MyCheckList/issues/4) / [#5](https://github.com/munl/MyCheckList/issues/5) | Change a member's role: tests / build |
+| [#8](https://github.com/munl/MyCheckList/issues/8) / [#9](https://github.com/munl/MyCheckList/issues/9) | Remove a member, and leave: tests / build |
+| [#10](https://github.com/munl/MyCheckList/issues/10) / [#11](https://github.com/munl/MyCheckList/issues/11) | Clean-up when a member is removed: tests / build |
+| [#12](https://github.com/munl/MyCheckList/issues/12) / [#13](https://github.com/munl/MyCheckList/issues/13) | Transfer ownership: tests / build |
+
+| Endpoint | Who | Notes |
+| --- | --- | --- |
+| `GET /api/checklists/{id}/members` | VIEWER+ | Active members: name, role, joined date, stars, streaks. Emails only for the owner and super admin |
+| `PATCH /api/checklists/{id}/members/{userId}` | OWNER | `{role}`: EDITOR or VIEWER only (OWNER → 400). Can't change the owner (409) |
+| `DELETE /api/checklists/{id}/members/{userId}` | OWNER | Soft removal plus clean-up. Can't remove the owner (409) |
+| `POST /api/checklists/{id}/leave` | EDITOR, VIEWER | Works on archived lists. The owner gets 409 ("transfer ownership first") |
+| `POST /api/checklists/{id}/transfer-ownership` | OWNER | `{userId}` of any active member; the old owner becomes EDITOR |
+
+On archived lists only viewing and leaving work; other member changes return 409. A super admin can do everything, audited. Still to confirm when writing the #10 tests: stars a removed member already earned today are kept.
 
 ## Repeating lists
 
@@ -257,7 +284,8 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 - [x] Run `./gradlew test` on the new schema: 16 of 16 pass
 - [x] Reorganize the code into feature packages (`api/`, `domain/`, `data/`); 16 of 16 tests pass
 - [ ] Set up Firebase Google sign-in and test `/api/me` with a real token (in progress)
-- [ ] **Members API:** list, change role, remove, leave, transfer ownership
+- [x] Plan the Members API and create its tickets (#1–#13)
+- [ ] **Members API:** list, change role, remove, leave, transfer ownership (#1–#13)
 - [ ] **Invitations API:** invite by email, inbox, accept or decline, revoke
 - [ ] **Schedule API:** set, change or remove a list's repeat rule, and preview its next dates
 - [ ] **Items and Occurrences API:** template items (add, edit, reorder, assign); today's occurrence (get or create, tick and untick, "my items" and "unassigned" filters); history
@@ -284,6 +312,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 
 | Date | What was done |
 | --- | --- |
+| 2026-10-22 | Planned the Members API test-first. Decided: soft removal (`removed_at`) with clean-up, transfer to any member with the old owner becoming an editor, the owner must transfer before leaving, the members list shows stars to everyone and emails to the owner only, and only leaving works on archived lists. Created GitHub issues #1–#13 as test/build pairs, with labels and the "V1 API" milestone |
 | 2026-10-21 | Worked through the open questions. Invites: inbox only in V1, Resend email as a later nice-to-have, plus email privacy rules. Confirmed that all custom queries use bound parameters and recorded a "no string-built SQL" rule. Ran `./gradlew test` after the reorganization and storage controls: 16 of 16 pass. Star tiers stay global; the client app will suggest reward costs by size. Push notifications through FCM: the streak-at-risk reminder is in V1 (3 hours before the list's deadline, quiet hours in each person's own zone); invite, reward-request, approval and team-finished notifications are recorded for later |
 | 2026-10-15 (evening) | Reviewed storage growth (it's linear, about 2 MB per year for a 10-item daily list). Agreed on three ways to keep it down: lazy occurrences, compacting history after 90 days, and auto-pausing lists after 14 days without activity. Schema: `checklists.last_activity_at`, `checklist_schedules.paused_at`, and `item_count`, `completed_item_count` and `compacted_at` on occurrences. Config: `app.history.full-detail-days=90`, `app.schedule.auto-pause-after-days=14`. V1 was edited in place again, since there's still no persistent database |
 | 2026-10-15 (later) | Confirmed the new schema: 16 of 16 tests pass. Reorganized the code by feature, with `api/`, `domain/` and `data/` subfolders and one entity per file (25 files became 57; no logic changed). Moved the Testcontainers setup to `src/test/.../support/` |
