@@ -16,10 +16,12 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
+import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * Members are soft removed: leaving or being removed sets `checklist_members.removed_at`
@@ -47,14 +49,15 @@ class RemovedMemberAccessTest @Autowired constructor(
         check(updated == 1) { "expected one member row to mark removed, got $updated" }
     }
 
-    /** The caller's `GET /api/checklists` response, one map per list. */
-    private fun myLists(who: RequestPostProcessor): List<Map<String, Any?>> {
-        val body = mvc.get("/api/checklists") { with(who) }.andExpect { status { isOk() } }
+    /** The caller's `GET /api/checklists` response (or `?archived=true`), one map per list. */
+    private fun myLists(who: RequestPostProcessor, archived: Boolean = false): List<Map<String, Any?>> {
+        val body = mvc.get("/api/checklists?archived=$archived") { with(who) }.andExpect { status { isOk() } }
             .andReturn().response.contentAsString
         return JsonPath.read(body, "$")
     }
 
-    private fun myListIds(who: RequestPostProcessor): List<UUID> = myLists(who).map { UUID.fromString(it["id"] as String) }
+    private fun myListIds(who: RequestPostProcessor, archived: Boolean = false): List<UUID> =
+        myLists(who, archived).map { UUID.fromString(it["id"] as String) }
 
     /** A list with an owner and an editor, where the editor has been removed. */
     private fun listWithRemovedEditor(): Triple<UUID, RequestPostProcessor, RequestPostProcessor> {
@@ -94,6 +97,16 @@ class RemovedMemberAccessTest @Autowired constructor(
         val (id, _, removed) = listWithRemovedEditor()
 
         assertFalse(id in myListIds(removed))
+    }
+
+    @Test
+    fun `a removed member doesn't see the list among their archived lists either`() {
+        val (id, owner, removed) = listWithRemovedEditor()
+        mvc.post("/api/checklists/$id/archive") { with(owner) }.andExpect { status { isOk() } }
+        assertTrue(id in myListIds(owner, archived = true))
+
+        assertFalse(id in myListIds(removed, archived = true))
+        mvc.get("/api/checklists/$id") { with(removed) }.andExpect { status { isNotFound() } }
     }
 
     // --- counts and constraints ---------------------------------------------
