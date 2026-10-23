@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 
 /**
@@ -71,7 +72,7 @@ class MemberRejoinTest @Autowired constructor(
         val id = checklists.createList(oldOwner)
         markRemoved(id, oldOwnerId)
         val newOwner = signedIn("new-owner")
-        memberService.addOrRestore(id, checklists.userId(newOwner), MemberRole.OWNER)
+        checklists.insertOwnerRow(id, newOwner)
 
         memberService.addOrRestore(id, oldOwnerId, MemberRole.EDITOR)
 
@@ -94,5 +95,20 @@ class MemberRejoinTest @Autowired constructor(
 
         mvc.get("/api/checklists/$id") { with(owner) }.andExpect { jsonPath("$.myRole") { value("OWNER") } }
         mvc.get("/api/checklists/$id") { with(editor) }.andExpect { jsonPath("$.myRole") { value("EDITOR") } }
+    }
+
+    @Test
+    fun `nobody can be added or restored as owner`() {
+        val oldOwner = signedIn("old-owner")
+        val oldOwnerId = checklists.userId(oldOwner)
+        val id = checklists.createList(oldOwner)
+        markRemoved(id, oldOwnerId)
+
+        assertFailsWith<IllegalArgumentException> {
+            memberService.addOrRestore(id, checklists.userId(signedIn("newcomer")), MemberRole.OWNER)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            memberService.addOrRestore(id, oldOwnerId, MemberRole.OWNER)
+        }
     }
 }

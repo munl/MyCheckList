@@ -130,7 +130,7 @@ class RemovedMemberAccessTest @Autowired constructor(
         markRemoved(id, oldOwner)
 
         val newOwner = signedIn("new-owner")
-        checklists.addMember(id, newOwner, MemberRole.OWNER)
+        checklists.insertOwnerRow(id, newOwner)
 
         mvc.get("/api/checklists/$id") { with(newOwner) }.andExpect {
             status { isOk() }

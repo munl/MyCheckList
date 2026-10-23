@@ -21,9 +21,12 @@ class MemberService(
      *
      * A restored row gets [role], so it never keeps an old OWNER role. Someone who is already
      * an active member is left as they are: their role only changes through the members API.
+     *
+     * Owners can't be added this way; they only come from creating a list or a transfer.
      */
     @Transactional
     fun addOrRestore(checklistId: UUID, userId: UUID, role: MemberRole): ChecklistMember {
+        require(role != MemberRole.OWNER) { "Owners come from creating a list or a transfer, not from joining" }
         val id = ChecklistMemberId(checklistId, userId)
         val existing = members.findByIdOrNull(id) ?: return members.save(ChecklistMember(id, role))
         if (existing.removedAt == null) return existing
