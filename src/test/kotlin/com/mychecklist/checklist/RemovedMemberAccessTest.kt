@@ -5,7 +5,6 @@ import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
 import com.mychecklist.support.signedIn
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -27,7 +26,6 @@ import kotlin.test.assertFalse
  *
  * No endpoint removes members yet, so [markRemoved] sets the column with SQL.
  */
-@Disabled("Waiting on #3")
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfig::class, TestChecklists::class)

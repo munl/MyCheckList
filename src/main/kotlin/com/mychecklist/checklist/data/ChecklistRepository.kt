@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.util.UUID
 
-/** Query result: number of members in one checklist. */
+/** Query result: number of members (not removed) in one checklist. */
 interface ChecklistMemberCount {
     val checklistId: UUID
     val total: Long
@@ -20,12 +20,15 @@ interface ChecklistItemCount {
 
 interface ChecklistRepository : JpaRepository<Checklist, UUID> {
 
-    /** Checklists the user is a member of (any role), excluding archived ones. */
+    /** Checklists the user is a member of (any role, not removed), excluding archived ones. */
     @Query(
         """
         select c from Checklist c
         where c.archivedAt is null
-          and exists (select 1 from ChecklistMember m where m.id.checklistId = c.id and m.id.userId = :userId)
+          and exists (
+              select 1 from ChecklistMember m
+              where m.id.checklistId = c.id and m.id.userId = :userId and m.removedAt is null
+          )
         order by c.updatedAt desc
         """,
     )
@@ -36,7 +39,10 @@ interface ChecklistRepository : JpaRepository<Checklist, UUID> {
         """
         select c from Checklist c
         where c.archivedAt is not null
-          and exists (select 1 from ChecklistMember m where m.id.checklistId = c.id and m.id.userId = :userId)
+          and exists (
+              select 1 from ChecklistMember m
+              where m.id.checklistId = c.id and m.id.userId = :userId and m.removedAt is null
+          )
         order by c.archivedAt desc
         """,
     )
@@ -46,7 +52,7 @@ interface ChecklistRepository : JpaRepository<Checklist, UUID> {
         """
         select m.id.checklistId as checklistId, count(*) as total
         from ChecklistMember m
-        where m.id.checklistId in :ids
+        where m.id.checklistId in :ids and m.removedAt is null
         group by m.id.checklistId
         """,
     )

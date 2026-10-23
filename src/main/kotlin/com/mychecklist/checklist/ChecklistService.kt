@@ -33,7 +33,7 @@ class ChecklistService(
 
     @Transactional
     fun create(user: User, request: CreateChecklistRequest): ChecklistResponse {
-        if (members.countByIdUserIdAndRole(user.id!!, MemberRole.OWNER) >= MAX_OWNED_CHECKLISTS) {
+        if (members.countByIdUserIdAndRoleAndRemovedAtIsNull(user.id!!, MemberRole.OWNER) >= MAX_OWNED_CHECKLISTS) {
             throw ConflictException("You can own at most $MAX_OWNED_CHECKLISTS checklists")
         }
         val checklist = checklists.saveAndFlush(
@@ -51,7 +51,7 @@ class ChecklistService(
     @Transactional(readOnly = true)
     fun listMine(user: User, archived: Boolean): List<ChecklistResponse> {
         val lists = if (archived) checklists.findArchivedForUser(user.id!!) else checklists.findActiveForUser(user.id!!)
-        val roles = members.findByIdUserId(user.id!!).associate { it.id.checklistId to it.role }
+        val roles = members.findByIdUserIdAndRemovedAtIsNull(user.id!!).associate { it.id.checklistId to it.role }
         return toResponses(lists, roles)
     }
 
