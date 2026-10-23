@@ -1,9 +1,7 @@
 package com.mychecklist.support
 
 import com.jayway.jsonpath.JsonPath
-import com.mychecklist.checklist.data.ChecklistMemberRepository
-import com.mychecklist.checklist.domain.ChecklistMember
-import com.mychecklist.checklist.domain.ChecklistMemberId
+import com.mychecklist.checklist.MemberService
 import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.user.data.UserRepository
 import org.springframework.boot.test.context.TestComponent
@@ -22,7 +20,7 @@ import java.util.UUID
 class TestChecklists(
     private val mvc: MockMvc,
     private val users: UserRepository,
-    private val members: ChecklistMemberRepository,
+    private val memberService: MemberService,
 ) {
 
     /** Creates a list through the API, so [who] becomes its owner. Returns its ID. */
@@ -44,8 +42,8 @@ class TestChecklists(
         return users.findByEmail(email)!!.id!!
     }
 
-    /** Adds the user behind a test token to a list. */
+    /** Adds the user behind a test token to a list (restoring their old row if they were removed). */
     fun addMember(listId: UUID, who: RequestPostProcessor, role: MemberRole) {
-        members.save(ChecklistMember(ChecklistMemberId(listId, userId(who)), role))
+        memberService.addOrRestore(listId, userId(who), role)
     }
 }
