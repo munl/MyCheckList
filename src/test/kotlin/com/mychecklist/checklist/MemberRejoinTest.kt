@@ -81,4 +81,18 @@ class MemberRejoinTest @Autowired constructor(
         }
         mvc.get("/api/checklists/$id") { with(newOwner) }.andExpect { jsonPath("$.myRole") { value("OWNER") } }
     }
+
+    @Test
+    fun `adding someone who is already an active member changes nothing`() {
+        val owner = signedIn("owner")
+        val id = checklists.createList(owner)
+        val editor = signedIn("editor")
+        checklists.addMember(id, editor, MemberRole.EDITOR)
+
+        memberService.addOrRestore(id, checklists.userId(owner), MemberRole.VIEWER)
+        memberService.addOrRestore(id, checklists.userId(editor), MemberRole.VIEWER)
+
+        mvc.get("/api/checklists/$id") { with(owner) }.andExpect { jsonPath("$.myRole") { value("OWNER") } }
+        mvc.get("/api/checklists/$id") { with(editor) }.andExpect { jsonPath("$.myRole") { value("EDITOR") } }
+    }
 }

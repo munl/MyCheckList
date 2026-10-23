@@ -19,12 +19,14 @@ class MemberService(
      * restored so their stars and streaks come back. Use this instead of saving a new
      * [ChecklistMember], which would overwrite that row.
      *
-     * The role is always set to [role], so a restored row never keeps an old OWNER role.
+     * A restored row gets [role], so it never keeps an old OWNER role. Someone who is already
+     * an active member is left as they are: their role only changes through the members API.
      */
     @Transactional
     fun addOrRestore(checklistId: UUID, userId: UUID, role: MemberRole): ChecklistMember {
         val id = ChecklistMemberId(checklistId, userId)
         val existing = members.findByIdOrNull(id) ?: return members.save(ChecklistMember(id, role))
+        if (existing.removedAt == null) return existing
         existing.removedAt = null
         existing.role = role
         return members.save(existing)
