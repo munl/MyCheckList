@@ -58,8 +58,8 @@ class MemberService(
 
     /**
      * Adds someone to a list. If they were a member before (soft removed), their old row is
-     * restored so their stars and streaks come back. Use this instead of saving a new
-     * [ChecklistMember], which would overwrite that row.
+     * restored so their stars and streaks come back, with a new join date. Use this instead of
+     * saving a new [ChecklistMember], which would overwrite that row.
      *
      * A restored row gets [role], so it never keeps an old OWNER role. Someone who is already
      * an active member is left as they are: their role only changes through the members API.
@@ -78,8 +78,7 @@ class MemberService(
         val id = ChecklistMemberId(checklistId, userId)
         val existing = members.findByIdOrNull(id) ?: return members.save(ChecklistMember(id, role))
         if (existing.removedAt == null) return existing
-        existing.removedAt = null
-        existing.role = role
-        return members.save(existing)
+        members.restoreRemoved(checklistId, userId, role.name)
+        return members.findByIdOrNull(id)!!
     }
 }
