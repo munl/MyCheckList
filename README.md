@@ -141,6 +141,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/admin/users   #
 | `PATCH /api/checklists/{id}` | editor+ | `title`, `description`, `timeZone` |
 | `POST /api/checklists/{id}/archive` · `/unarchive` | owner | Archived lists are read-only |
 | `DELETE /api/checklists/{id}?confirm=true` | owner | Permanent |
+| `GET /api/checklists/{id}/members` | viewer+ | Active members, the owner first. Emails only for the owner and super admins |
 
 Errors come back as [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) JSON (`status`, `title`, `detail`). If you aren't a member of a list, you get **404**, the same as for a list that doesn't exist. If your role is too low, you get **403**.
 
@@ -155,10 +156,12 @@ src/main/kotlin/com/mychecklist/
 │   ├── api/         MeController, UserResponse
 │   ├── domain/      User, PlatformRole
 │   └── data/        UserRepository
-├── checklist/       ChecklistService, ChecklistAccessService (permissions), MemberService
+├── checklist/       ChecklistService, ChecklistAccessService (permissions)
 │   ├── api/         ChecklistController, ChecklistDtos
 │   ├── domain/      Checklist, ChecklistMember, MemberRole
 │   └── data/        ChecklistRepository, ChecklistMemberRepository
+├── member/          MemberService (list, add or restore); uses checklist/'s member entity
+│   └── api/         MemberController, MemberDtos
 ├── invitation/      domain/ ChecklistInvitation, InvitationStatus · data/
 ├── item/            domain/ ChecklistItem, ItemAssignee (the template) · data/
 ├── schedule/        domain/ ChecklistSchedule, RepeatFrequency · data/
