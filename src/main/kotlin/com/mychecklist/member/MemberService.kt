@@ -11,6 +11,7 @@ import com.mychecklist.common.error.NotFoundException
 import com.mychecklist.member.api.MemberResponse
 import com.mychecklist.user.data.UserRepository
 import com.mychecklist.user.domain.User
+import jakarta.persistence.EntityManager
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -22,6 +23,7 @@ class MemberService(
     private val members: ChecklistMemberRepository,
     private val users: UserRepository,
     private val access: ChecklistAccessService,
+    private val entityManager: EntityManager,
 ) {
 
     /**
@@ -79,6 +81,8 @@ class MemberService(
         val existing = members.findByIdOrNull(id) ?: return members.save(ChecklistMember(id, role))
         if (existing.removedAt == null) return existing
         members.restoreRemoved(checklistId, userId, role.name)
-        return members.findByIdOrNull(id)!!
+        // Reload just this row (new role and join date), leaving the caller's other entities alone.
+        entityManager.refresh(existing)
+        return existing
     }
 }

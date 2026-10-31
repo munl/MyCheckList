@@ -28,8 +28,11 @@ interface ChecklistMemberRepository : JpaRepository<ChecklistMember, ChecklistMe
      * Brings a removed member back with [role] and a new join date; stars and streaks stay.
      * `joined_at` isn't updatable through the entity, so this is the only place that changes it.
      * Does nothing if the row isn't removed. Use `MemberService.addOrRestore`, not this directly.
+     *
+     * Doesn't clear the persistence context: that would detach everything the caller loaded, and
+     * their later changes would be lost. Refresh the member entity afterwards instead.
      */
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query(
         value = "UPDATE checklist_members SET removed_at = NULL, role = :role, joined_at = now() " +
             "WHERE checklist_id = :checklistId AND user_id = :userId AND removed_at IS NOT NULL",

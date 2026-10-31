@@ -1,6 +1,7 @@
 package com.mychecklist.member
 
 import com.mychecklist.checklist.data.ChecklistMemberRepository
+import com.mychecklist.checklist.data.ChecklistRepository
 import com.mychecklist.checklist.domain.ChecklistMemberId
 import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.common.error.ConflictException
@@ -17,6 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.transaction.support.TransactionTemplate
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
@@ -40,6 +42,8 @@ class MemberRejoinTest @Autowired constructor(
     private val memberService: MemberService,
     private val members: ChecklistMemberRepository,
     private val jdbc: JdbcTemplate,
+    private val checklistRepository: ChecklistRepository,
+    private val transaction: TransactionTemplate,
 ) {
 
     private fun markRemoved(listId: UUID, userId: UUID) {
@@ -102,6 +106,25 @@ class MemberRejoinTest @Autowired constructor(
         assertTrue(rejoined.isAfter(before), "expected a new join date, got $rejoined")
         // Callers (e.g. accepting an invite) may show the returned row, so it must have the new date too.
         assertEquals(rejoined, restored.joinedAt)
+    }
+
+    @Test
+    fun `a rejoin inside a bigger transaction doesn't lose the caller's other changes`() {
+        // Like accepting an invite: load something, rejoin, then change what was loaded.
+        val id = checklists.createList(signedIn("owner"), title = "Before")
+        val samId = checklists.userId(signedIn("sam"))
+        memberService.addOrRestore(id, samId, MemberRole.EDITOR)
+        markRemoved(id, samId)
+
+        transaction.execute {
+            val list = checklistRepository.findById(id).get()
+            memberService.addOrRestore(id, samId, MemberRole.VIEWER)
+            list.title = "After"
+        }
+
+        val title = jdbc.queryForObject("SELECT title FROM checklists WHERE id = ?", String::class.java, id)
+        assertEquals("After", title)
+        assertNull(members.findById(ChecklistMemberId(id, samId)).get().removedAt)
     }
 
     @Test
