@@ -10,18 +10,20 @@ const val SUPER_ADMIN_EMAIL = "boss@example.com"
 /**
  * A signed-in test user, identified by a fake Firebase token. `jwt()` stands in for a
  * verified token and goes through the real Spring Security filter chain. The default
- * email is random, so each call is a fresh user.
+ * email is random, so each call is a fresh user. [picture] becomes their `photoUrl`.
  */
 fun signedIn(
     name: String,
     email: String = "$name-${UUID.randomUUID()}@example.com",
     uid: String = "uid-$email",
+    picture: String? = null,
 ): RequestPostProcessor =
     jwt().jwt {
         it.subject(uid)
             .claim("email", email)
             .claim("email_verified", true)
             .claim("name", name)
+        if (picture != null) it.claim("picture", picture)
     }
 
 /** The super admin (same uid as SchemaAndUserSyncTest, in case they share a database). */
