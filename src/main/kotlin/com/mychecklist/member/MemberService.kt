@@ -1,5 +1,6 @@
 package com.mychecklist.member
 
+import com.mychecklist.checklist.ChecklistAccessService
 import com.mychecklist.checklist.data.ChecklistMemberRepository
 import com.mychecklist.checklist.data.ChecklistRepository
 import com.mychecklist.checklist.domain.ChecklistMember
@@ -7,6 +8,9 @@ import com.mychecklist.checklist.domain.ChecklistMemberId
 import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.common.error.ConflictException
 import com.mychecklist.common.error.NotFoundException
+import com.mychecklist.member.api.MemberResponse
+import com.mychecklist.user.data.UserRepository
+import com.mychecklist.user.domain.User
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -16,7 +20,41 @@ import java.util.UUID
 class MemberService(
     private val checklists: ChecklistRepository,
     private val members: ChecklistMemberRepository,
+    private val users: UserRepository,
+    private val access: ChecklistAccessService,
 ) {
+
+    /**
+     * The list's active members: the owner first, then by join date, ties by user id.
+     * Emails go only to the owner and super admins; everyone else gets them left out.
+     */
+    @Transactional(readOnly = true)
+    fun list(user: User, checklistId: UUID): List<MemberResponse> {
+        val granted = access.requireAccess(checklistId, user, MemberRole.VIEWER)
+        val showEmails = granted.role == MemberRole.OWNER || user.isSuperAdmin
+        val active = members.findByIdChecklistIdAndRemovedAtIsNull(checklistId)
+        val profiles = users.findAllById(active.map { it.id.userId }).associateBy { it.id!! }
+
+        return active
+            // Postgres compares uuids byte by byte, which is the same as their text; UUID.compareTo isn't.
+            .sortedWith(
+                compareBy<ChecklistMember>({ it.role != MemberRole.OWNER }, { it.joinedAt }, { it.id.userId.toString() }),
+            )
+            .map { member ->
+                val profile = profiles.getValue(member.id.userId)
+                MemberResponse(
+                    userId = member.id.userId,
+                    displayName = profile.displayName,
+                    photoUrl = profile.photoUrl,
+                    email = profile.email.takeIf { showEmails },
+                    role = member.role,
+                    joinedAt = member.joinedAt,
+                    starBalance = member.starBalance,
+                    currentStreak = member.currentStreak,
+                    longestStreak = member.longestStreak,
+                )
+            }
+    }
 
     /**
      * Adds someone to a list. If they were a member before (soft removed), their old row is

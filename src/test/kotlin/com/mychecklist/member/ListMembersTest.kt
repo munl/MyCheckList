@@ -7,7 +7,6 @@ import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
 import com.mychecklist.support.signedIn
 import com.mychecklist.support.superAdmin
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -36,7 +35,6 @@ import kotlin.test.assertTrue
  *
  * Super admins are never members of a list, so there's no "super admin who is also a member" case.
  */
-@Disabled("Waiting on #7")
 @SpringBootTest(properties = ["app.super-admin-emails=$SUPER_ADMIN_EMAIL"])
 @AutoConfigureMockMvc
 @Import(TestcontainersConfig::class, TestChecklists::class)

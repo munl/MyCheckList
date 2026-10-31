@@ -9,9 +9,9 @@ Last updated: 2026-10-30
 
 The database now supports **repeating lists, stars, streaks and rewards**. The schema is done, and the entities match it. The APIs for these features haven't been built yet.
 
-The Members API has started: removed members now lose access (soft removal), and `MemberService.addOrRestore` is the one way to add someone to a list.
+The Members API has started: removed members now lose access (soft removal), `MemberService.addOrRestore` is the one way to add someone to a list, and `GET /api/checklists/{id}/members` lists a list's members (#6/#7, in review).
 
-`./gradlew test` passes **29 of 29** (2026-10-30, fresh run), plus 14 list-members tests (#6) that are switched off until #7 is built.
+`./gradlew test` passes **43 of 43** (2026-10-30, fresh run, on branch `6-7-list-members`; not merged yet).
 
 - **Repo:** [github.com/munl/MyCheckList](https://github.com/munl/MyCheckList), branch `main`
 - **Firebase project ID:** `mychecklist-e745d` (the default in config)
@@ -20,7 +20,7 @@ The Members API has started: removed members now lose access (soft removal), and
 
 ### Pick up here
 
-1. Carry on with the **Members API**, one ticket pair at a time. Now: [#6](https://github.com/munl/MyCheckList/issues/6)/[#7](https://github.com/munl/MyCheckList/issues/7) (list members) on branch `6-7-list-members`: the #6 tests are written (`ListMembersTest`, switched off); next is the #7 build. Then [#20](https://github.com/munl/MyCheckList/issues/20)/[#21](https://github.com/munl/MyCheckList/issues/21) (super admins can't be on lists), then #4/#5. The rules are in [Members API](#members-api) below. Each pair is a Tests ticket (written first) and a Build ticket, on one branch and one PR.
+1. Carry on with the **Members API**, one ticket pair at a time. Now: [#6](https://github.com/munl/MyCheckList/issues/6)/[#7](https://github.com/munl/MyCheckList/issues/7) (list members) on branch `6-7-list-members`: tests and build done, 43 of 43 pass; next is the PR and `/review-pr`. Then [#20](https://github.com/munl/MyCheckList/issues/20)/[#21](https://github.com/munl/MyCheckList/issues/21) (super admins can't be on lists), then #4/#5. The rules are in [Members API](#members-api) below. Each pair is a Tests ticket (written first) and a Build ticket, on one branch and one PR.
 2. Build the **Invitations API**: invite by email (EDITOR+, and only the OWNER can invite editors), the inbox at `/api/me/invitations`, accept or decline, revoke, expiry. Responses must not reveal whether an email has an account. Follow the email privacy rules and "Repeat invites and reminders" in Decisions. Inbox only; no email sending in V1. Accepting must go through `MemberService.addOrRestore`, and fix [#17](https://github.com/munl/MyCheckList/issues/17) (two accepts at once) at the same time. An invite to a super admin's email is **quietly ignored**: the same response as any invite, nothing saved, nothing in their inbox (see "Super admins are never on lists" in Decisions).
 3. Build the **Schedule, Items and Occurrences API**. See [Repeating lists](#repeating-lists) and [Stars and rewards](#stars-and-rewards) below for the rules. Assigning must follow the "Assigning" rule in Decisions.
 4. Every endpoint goes through `ChecklistAccessService.requireAccess`, with tests for outsiders (404) and roles that are too low (403).
@@ -242,7 +242,7 @@ The source code is under `src/main/kotlin/com/mychecklist/`, organized **by feat
 | `common/error/` | `NotFound` / `Forbidden` / `Conflict` / `BadRequest` exceptions, turned into problem JSON |
 | `user/` | `UserService` (token → user row), `@CurrentUser`; `api/` `GET /api/me`; `domain/` `User`; `data/` `UserRepository` |
 | `checklist/` | `ChecklistAccessService` (**the permission check**: every checklist, member, invite, item and reward operation must call `requireAccess`), `ChecklistService`; `api/` controller and DTOs; `domain/` `Checklist`, `ChecklistMember` (with star and streak totals and `removedAt`), `MemberRole`; `data/` `ChecklistMemberRepository`. The member entity stays here because the permission check relies on it |
-| `member/` | `MemberService` (`addOrRestore`: **the only way to add someone to a list**; restores a removed member's row). The members API (`api/MemberController`, `api/MemberDtos`) goes here from #7 (decided 2026-10-30) |
+| `member/` | `MemberService` (`addOrRestore`: **the only way to add someone to a list**; restores a removed member's row). `list` (the members endpoint, two queries however many members). `api/` `MemberController`, `MemberDtos` (decided 2026-10-30) |
 | `invitation/`, `item/`, `schedule/` | Entities and repositories for invitations, template items and assignees, and repeat rules |
 | `occurrence/` | Occurrences, their item copies and assignees, member results; `OccurrenceItemRepository.completeIfOpen` (first one wins) |
 | `stars/`, `reward/` | The star ledger; rewards and redemptions |
@@ -251,7 +251,7 @@ The source code is under `src/main/kotlin/com/mychecklist/`, organized **by feat
 | `src/test/.../checklist/ChecklistApiTest.kt` | API tests: each role, super admin, archived lists, validation, time zones, 401 |
 | `src/test/.../checklist/RemovedMemberAccessTest.kt` | Removed members: 404 on reads and writes, gone from their lists (active and archived), not in `memberCount`, one-owner index and owned-lists limit |
 | `src/test/.../member/MemberRejoinTest.kt` | `addOrRestore`: rejoin keeps stars, active members unchanged, no OWNER, archived (409) and missing (404) lists |
-| `src/test/.../member/ListMembersTest.kt` | `GET /api/checklists/{id}/members` (#6), switched off until #7 |
+| `src/test/.../member/ListMembersTest.kt` | `GET /api/checklists/{id}/members` (#6): fields, order, removed members, emails by role, archived lists, 404s, super admin |
 | `src/test/.../support/` | `TestcontainersConfig` (shared throwaway Postgres), `TestUsers.kt` (`signedIn`, `superAdmin`), `TestChecklists` (`createList`, `addMember`, `userId`, `insertOwnerRow`) |
 | `Dockerfile`, `docker-compose.yml`, `k8s/` | Container image, local Postgres 17, Kubernetes manifests |
 | `.claude/skills/review-pr/SKILL.md` | The `/review-pr` skill: the risk review on an open PR (see [How we work on a ticket](#how-we-work-on-a-ticket)) |
@@ -270,6 +270,7 @@ The source code is under `src/main/kotlin/com/mychecklist/`, organized **by feat
 | `PATCH /api/checklists/{id}` | EDITOR or higher (`title`, `description`, `timeZone`) |
 | `POST /api/checklists/{id}/archive` and `/unarchive` | OWNER |
 | `DELETE /api/checklists/{id}?confirm=true` | OWNER |
+| `GET /api/checklists/{id}/members` | VIEWER or higher. Emails only for the owner and super admins |
 
 ## How to run it
 
@@ -310,7 +311,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 - [x] Reorganize the code into feature packages (`api/`, `domain/`, `data/`); 16 of 16 tests pass
 - [ ] Set up Firebase Google sign-in and test `/api/me` with a real token (in progress)
 - [x] Plan the Members API and create its tickets (#1–#13)
-- [ ] **Members API:** list, change role, remove, leave, transfer ownership (#1–#13). Done: #1 (PR #14), #2/#3 (PR #16). #6 tests written. Added #20/#21 (super admins can't be on lists)
+- [ ] **Members API:** list, change role, remove, leave, transfer ownership (#1–#13). Done: #1 (PR #14), #2/#3 (PR #16). #6/#7 built (PR pending). Added #20/#21 (super admins can't be on lists)
 - [ ] **Invitations API:** invite by email, inbox, accept or decline, revoke
 - [ ] **Schedule API:** set, change or remove a list's repeat rule, and preview its next dates
 - [ ] **Items and Occurrences API:** template items (add, edit, reorder, assign); today's occurrence (get or create, tick and untick, "my items" and "unassigned" filters); history
@@ -338,7 +339,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 
 | Date | What was done |
 | --- | --- |
-| 2026-10-30 | Started #6/#7 (list members) on branch `6-7-list-members`; kept the planned order (#6/#7 before #4/#5). Agreed the details: the owner first, then by join date, ties by `userId`; editors and viewers get no `email` key at all; `photoUrl` included; a missing name or photo is `null`; a super admin reading it isn't audited. Wrote 14 tests in `ListMembersTest` (switched off with `@Disabled("Waiting on #7")`), checked that all 14 fail when switched on, and made the 404 tests check "Checklist not found" so a missing route can't pass them. Added an optional `picture` to the `signedIn` test helper. Moved `MemberService` and the member tests to a new `member/` package; the member entity, repository and `MemberRole` stay in `checklist/`. Decided that super admins are separate overseer accounts for a future web dashboard and are never on lists, and created #20/#21 for it. Updated issue #6 with the agreed rules. 29 of 29 tests pass |
+| 2026-10-30 | Started #6/#7 (list members) on branch `6-7-list-members`; kept the planned order (#6/#7 before #4/#5). Agreed the details: the owner first, then by join date, ties by `userId`; editors and viewers get no `email` key at all; `photoUrl` included; a missing name or photo is `null`; a super admin reading it isn't audited. Wrote 14 tests in `ListMembersTest` (switched off with `@Disabled("Waiting on #7")`), checked that all 14 fail when switched on, and made the 404 tests check "Checklist not found" so a missing route can't pass them. Added an optional `picture` to the `signedIn` test helper. Moved `MemberService` and the member tests to a new `member/` package; the member entity, repository and `MemberRole` stay in `checklist/`. Decided that super admins are separate overseer accounts for a future web dashboard and are never on lists, and created #20/#21 for it. Updated issue #6 with the agreed rules. Built #7: `MemberService.list` and `MemberController` (`GET /api/checklists/{id}/members`), loading members and their users in two queries. One run failed to connect to the test database (an SSL error from the Postgres container, not the code); two full reruns passed. 43 of 43 tests pass |
 | 2026-10-23 (later) | Confirmed the last open #10 rule: stars a removed member already earned today are kept. Updated issue #10. Merged #1 (shared test helpers in `support/`, PR #14). Built #2/#3 (removed members lose access) on one branch: `removed_at`, a one-owner index that ignores removed members, and every member query skipping them. Removed members also don't count in `memberCount` (new rule on #2). Added a test that the owned-lists limit ignores removed owner rows. Decided that a transfer to someone at the 200-list limit gets 409, and added that rule to #12/#13. Opened PR #16 for #2/#3 and ran `/review-pr` three times (a full review, a short re-review of the fixes, then a full re-review): 8 risks in total, 7 fixed and 1 backlogged as #17. The fixes added `MemberService.addOrRestore` (restores a removed member's row with their stars and streaks; leaves active members as they are; refuses OWNER; 409 on archived lists, 404 on missing ones) and an "Assigning" rule. Recorded the repeat-invite and reminder decisions. 29 of 29 tests pass. Merged PR #16; #3 had to be closed by hand because the PR said `Closes #2, #3`, so the workflow now says `Closes #12, closes #13` |
 | 2026-10-23 | Designed and added the `/review-pr` skill with Jian (committed on `main` as an agreed exception). Agreed the workflow: never commit to `main`; one branch and PR per ticket pair; a separate reviewer agent reports every high risk plus medium ones up to 6, each with where, why, a failure scenario, a suggested fix and what else it affects; it skips what open tickets, recorded decisions or earlier PR threads already cover. Decisions are posted as one inline PR thread per risk, then each thread is answered and resolved. Backlog items become `backlog` issues on the board |
 | 2026-10-22 | Planned the Members API test-first. Decided: soft removal (`removed_at`) with clean-up, transfer to any member with the old owner becoming an editor, the owner must transfer before leaving, the members list shows stars to everyone and emails to the owner only, and only leaving works on archived lists. Created GitHub issues #1–#13 as test/build pairs, with labels and the "V1 API" milestone |
