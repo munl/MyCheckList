@@ -3,7 +3,7 @@
 > **This file is the main record of project progress.** Update it at the end of every work session: the status, the roadmap checkboxes and the session log.
 > Shareable view (may lag behind this file): [Claude Doc](https://claude.ai/code/artifact/723d9711-56f2-47bb-8819-1605d8fa82c1)
 
-Last updated: 2026-10-23
+Last updated: 2026-10-30
 
 ## Status
 
@@ -11,7 +11,7 @@ The database now supports **repeating lists, stars, streaks and rewards**. The s
 
 The Members API has started: removed members now lose access (soft removal), and `MemberService.addOrRestore` is the one way to add someone to a list.
 
-`./gradlew test` passes **29 of 29** (2026-10-23, fresh run; merged to `main` in PR #16).
+`./gradlew test` passes **29 of 29** (2026-10-30, fresh run), plus 14 list-members tests (#6) that are switched off until #7 is built.
 
 - **Repo:** [github.com/munl/MyCheckList](https://github.com/munl/MyCheckList), branch `main`
 - **Firebase project ID:** `mychecklist-e745d` (the default in config)
@@ -20,8 +20,8 @@ The Members API has started: removed members now lose access (soft removal), and
 
 ### Pick up here
 
-1. Carry on with the **Members API**, one ticket pair at a time: next is [#6](https://github.com/munl/MyCheckList/issues/6)/[#7](https://github.com/munl/MyCheckList/issues/7) (list members). The rules are in [Members API](#members-api) below. Each pair is a Tests ticket (written first) and a Build ticket, on one branch and one PR.
-2. Build the **Invitations API**: invite by email (EDITOR+, and only the OWNER can invite editors), the inbox at `/api/me/invitations`, accept or decline, revoke, expiry. Responses must not reveal whether an email has an account. Follow the email privacy rules and "Repeat invites and reminders" in Decisions. Inbox only; no email sending in V1. Accepting must go through `MemberService.addOrRestore`, and fix [#17](https://github.com/munl/MyCheckList/issues/17) (two accepts at once) at the same time.
+1. Carry on with the **Members API**, one ticket pair at a time. Now: [#6](https://github.com/munl/MyCheckList/issues/6)/[#7](https://github.com/munl/MyCheckList/issues/7) (list members) on branch `6-7-list-members`: the #6 tests are written (`ListMembersTest`, switched off); next is the #7 build. Then [#20](https://github.com/munl/MyCheckList/issues/20)/[#21](https://github.com/munl/MyCheckList/issues/21) (super admins can't be on lists), then #4/#5. The rules are in [Members API](#members-api) below. Each pair is a Tests ticket (written first) and a Build ticket, on one branch and one PR.
+2. Build the **Invitations API**: invite by email (EDITOR+, and only the OWNER can invite editors), the inbox at `/api/me/invitations`, accept or decline, revoke, expiry. Responses must not reveal whether an email has an account. Follow the email privacy rules and "Repeat invites and reminders" in Decisions. Inbox only; no email sending in V1. Accepting must go through `MemberService.addOrRestore`, and fix [#17](https://github.com/munl/MyCheckList/issues/17) (two accepts at once) at the same time. An invite to a super admin's email is **quietly ignored**: the same response as any invite, nothing saved, nothing in their inbox (see "Super admins are never on lists" in Decisions).
 3. Build the **Schedule, Items and Occurrences API**. See [Repeating lists](#repeating-lists) and [Stars and rewards](#stars-and-rewards) below for the rules. Assigning must follow the "Assigning" rule in Decisions.
 4. Every endpoint goes through `ChecklistAccessService.requireAccess`, with tests for outsiders (404) and roles that are too low (403).
 5. In parallel: finish Firebase Google sign-in and call `GET /api/me` with a real token from the Android app.
@@ -59,6 +59,7 @@ No real database has been created yet. `./gradlew test` uses a temporary Postgre
 | Hosting later | Neon for Postgres; the app on a container host (Cloudflare Containers), or k3s on Oracle's free tier for Kubernetes online | Cloudflare doesn't run Kubernetes |
 | List roles | Owner (one per list), Editor, Viewer | |
 | Super admin | `users.platform_role = SUPER_ADMIN`, set from the `APP_SUPER_ADMIN_EMAILS` setting; requires a verified email; changes go to `admin_audit_log` | The role can't be granted through the API |
+| Super admins are never on lists | Super admins are **separate accounts** with their own emails, made for overseers who will use a **web dashboard (planned for later)** to see and change anything, audited. They are never members of a list: creating a list → 403, `MemberService.addOrRestore` → 403, and an invite to their email is quietly ignored (same response, nothing saved). If an email is added to `APP_SUPER_ADMIN_EMAILS` while that person is still on a list, they stay `USER` at sign-in (a warning is logged with the email masked) until they've left every list. Tickets #20/#21 (decided 2026-10-30) | They're auditors, not list users, so a role on a list would mix the two. Quietly ignoring invites keeps the email privacy rule: nobody learns who the admins are |
 | Invites | By email, into an in-app inbox to accept or decline. **V1 ships with the inbox only.** Invite emails are a nice-to-have for later and will use **Resend** (free tier: 3,000 a month, 100 a day; Brevo, at 300 a day, is the fallback). The invite code is built so email can be added without changing the API: the invite and a "send email" job are saved in one transaction, and a background job sends the email and retries. A failed or skipped email never breaks the invite | So invites don't depend on email; sending needs our own domain (~$10–15 a year) for SPF/DKIM |
 | Repeat invites and reminders | If someone already has a **pending** invite to a list, a new invite to them is **ignored**: no second invite, nothing sent. The owner can send a **reminder** to a pending invitee, which sends a new email (comes with invite emails, after V1). Joining a list you're already an active member of changes nothing (`MemberService.addOrRestore` leaves the row as it is) | Avoids duplicate invites and spam; reminders are a deliberate owner action (decided 2026-10-23) |
 | Email privacy | Show emails only where needed (members list: names, and emails to owners at most). Never log email addresses (mask them, e.g. `j***@gmail.com`). Invite responses never reveal whether an account exists. Clear the email from declined, revoked and expired invites after ~30 days. When email sending arrives: one recipient per message, no free-form inviter text, rate limits on invites, an opt-out, and the API key kept in env vars or a Kubernetes Secret. No column-level encryption in V1 | Covers the realistic ways addresses leak. Encryption would need a blind-index lookup column and key management, and Firebase already holds the same addresses |
@@ -157,6 +158,7 @@ Planned 2026-10-22 as [GitHub issues #1–#13](https://github.com/munl/MyCheckLi
 | [#1](https://github.com/munl/MyCheckList/issues/1) | Setup: move shared test helpers into `support/` |
 | [#2](https://github.com/munl/MyCheckList/issues/2) / [#3](https://github.com/munl/MyCheckList/issues/3) | Removed members lose access (`removed_at`): tests / build |
 | [#6](https://github.com/munl/MyCheckList/issues/6) / [#7](https://github.com/munl/MyCheckList/issues/7) | List members: tests / build |
+| [#20](https://github.com/munl/MyCheckList/issues/20) / [#21](https://github.com/munl/MyCheckList/issues/21) | Super admins can't be on lists: tests / build (added 2026-10-30) |
 | [#4](https://github.com/munl/MyCheckList/issues/4) / [#5](https://github.com/munl/MyCheckList/issues/5) | Change a member's role: tests / build |
 | [#8](https://github.com/munl/MyCheckList/issues/8) / [#9](https://github.com/munl/MyCheckList/issues/9) | Remove a member, and leave: tests / build |
 | [#10](https://github.com/munl/MyCheckList/issues/10) / [#11](https://github.com/munl/MyCheckList/issues/11) | Clean-up when a member is removed: tests / build |
@@ -164,7 +166,7 @@ Planned 2026-10-22 as [GitHub issues #1–#13](https://github.com/munl/MyCheckLi
 
 | Endpoint | Who | Notes |
 | --- | --- | --- |
-| `GET /api/checklists/{id}/members` | VIEWER+ | Active members: name, role, joined date, stars, streaks. Emails only for the owner and super admin |
+| `GET /api/checklists/{id}/members` | VIEWER+ | Active members: `userId`, `displayName`, `photoUrl`, `role`, `joinedAt`, `starBalance`, `currentStreak`, `longestStreak` (a missing name or photo is `null`). The owner first, then by join date, ties by `userId`. Emails only for the owner and super admin; editors and viewers get no `email` key at all. A super admin reading it isn't audited |
 | `PATCH /api/checklists/{id}/members/{userId}` | OWNER | `{role}`: EDITOR or VIEWER only (OWNER → 400). Can't change the owner (409) |
 | `DELETE /api/checklists/{id}/members/{userId}` | OWNER | Soft removal plus clean-up. Can't remove the owner (409) |
 | `POST /api/checklists/{id}/leave` | EDITOR, VIEWER | Works on archived lists. The owner gets 409 ("transfer ownership first") |
@@ -306,7 +308,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 - [x] Reorganize the code into feature packages (`api/`, `domain/`, `data/`); 16 of 16 tests pass
 - [ ] Set up Firebase Google sign-in and test `/api/me` with a real token (in progress)
 - [x] Plan the Members API and create its tickets (#1–#13)
-- [ ] **Members API:** list, change role, remove, leave, transfer ownership (#1–#13). Done: #1 (PR #14), #2/#3 (PR #16)
+- [ ] **Members API:** list, change role, remove, leave, transfer ownership (#1–#13). Done: #1 (PR #14), #2/#3 (PR #16). #6 tests written. Added #20/#21 (super admins can't be on lists)
 - [ ] **Invitations API:** invite by email, inbox, accept or decline, revoke
 - [ ] **Schedule API:** set, change or remove a list's repeat rule, and preview its next dates
 - [ ] **Items and Occurrences API:** template items (add, edit, reorder, assign); today's occurrence (get or create, tick and untick, "my items" and "unassigned" filters); history
@@ -318,7 +320,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 - [ ] Later notifications: invite received, reward request, request approved or rejected, team finished
 - [ ] Later: invite emails through Resend (needs our own domain)
 - [x] Code review workflow: the `/review-pr` skill
-- [ ] CI (GitHub Actions) and Dependabot
+- [ ] CI (GitHub Actions) and Dependabot. CI done: the **Tests** check runs on every PR and push to `main`, and must pass before merging (PR #19)
 - [ ] API docs (OpenAPI/Swagger) for the mobile client
 - [ ] Security hardening, then deploy online: Neon plus a container host
 
@@ -334,6 +336,7 @@ To call the API, get an ID token in the app with `Firebase.auth.currentUser?.get
 
 | Date | What was done |
 | --- | --- |
+| 2026-10-30 | Started #6/#7 (list members) on branch `6-7-list-members`; kept the planned order (#6/#7 before #4/#5). Agreed the details: the owner first, then by join date, ties by `userId`; editors and viewers get no `email` key at all; `photoUrl` included; a missing name or photo is `null`; a super admin reading it isn't audited. Wrote 14 tests in `ListMembersTest` (switched off with `@Disabled("Waiting on #7")`), checked that all 14 fail when switched on, and made the 404 tests check "Checklist not found" so a missing route can't pass them. Added an optional `picture` to the `signedIn` test helper. Decided that super admins are separate overseer accounts for a future web dashboard and are never on lists, and created #20/#21 for it. Updated issue #6 with the agreed rules. 29 of 29 tests pass |
 | 2026-10-23 (later) | Confirmed the last open #10 rule: stars a removed member already earned today are kept. Updated issue #10. Merged #1 (shared test helpers in `support/`, PR #14). Built #2/#3 (removed members lose access) on one branch: `removed_at`, a one-owner index that ignores removed members, and every member query skipping them. Removed members also don't count in `memberCount` (new rule on #2). Added a test that the owned-lists limit ignores removed owner rows. Decided that a transfer to someone at the 200-list limit gets 409, and added that rule to #12/#13. Opened PR #16 for #2/#3 and ran `/review-pr` three times (a full review, a short re-review of the fixes, then a full re-review): 8 risks in total, 7 fixed and 1 backlogged as #17. The fixes added `MemberService.addOrRestore` (restores a removed member's row with their stars and streaks; leaves active members as they are; refuses OWNER; 409 on archived lists, 404 on missing ones) and an "Assigning" rule. Recorded the repeat-invite and reminder decisions. 29 of 29 tests pass. Merged PR #16; #3 had to be closed by hand because the PR said `Closes #2, #3`, so the workflow now says `Closes #12, closes #13` |
 | 2026-10-23 | Designed and added the `/review-pr` skill with Jian (committed on `main` as an agreed exception). Agreed the workflow: never commit to `main`; one branch and PR per ticket pair; a separate reviewer agent reports every high risk plus medium ones up to 6, each with where, why, a failure scenario, a suggested fix and what else it affects; it skips what open tickets, recorded decisions or earlier PR threads already cover. Decisions are posted as one inline PR thread per risk, then each thread is answered and resolved. Backlog items become `backlog` issues on the board |
 | 2026-10-22 | Planned the Members API test-first. Decided: soft removal (`removed_at`) with clean-up, transfer to any member with the old owner becoming an editor, the owner must transfer before leaving, the members list shows stars to everyone and emails to the owner only, and only leaving works on archived lists. Created GitHub issues #1–#13 as test/build pairs, with labels and the "V1 API" milestone |
