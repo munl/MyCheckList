@@ -155,10 +155,11 @@ src/main/kotlin/com/mychecklist/
 │   ├── api/         MeController, UserResponse
 │   ├── domain/      User, PlatformRole
 │   └── data/        UserRepository
-├── checklist/       ChecklistService, ChecklistAccessService (permissions), MemberService
+├── checklist/       ChecklistService, ChecklistAccessService (permissions)
 │   ├── api/         ChecklistController, ChecklistDtos
 │   ├── domain/      Checklist, ChecklistMember, MemberRole
 │   └── data/        ChecklistRepository, ChecklistMemberRepository
+├── member/          MemberService (adding, and later the members API); uses checklist/'s member entity
 ├── invitation/      domain/ ChecklistInvitation, InvitationStatus · data/
 ├── item/            domain/ ChecklistItem, ItemAssignee (the template) · data/
 ├── schedule/        domain/ ChecklistSchedule, RepeatFrequency · data/

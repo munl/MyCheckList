@@ -1,4 +1,4 @@
-package com.mychecklist.checklist
+package com.mychecklist.member
 
 import com.mychecklist.checklist.data.ChecklistMemberRepository
 import com.mychecklist.checklist.data.ChecklistRepository
@@ -28,7 +28,7 @@ class MemberService(
      *
      * Owners can't be added this way; they only come from creating a list or a transfer.
      * Nobody can join an archived list (409), and a list that doesn't exist gives 404.
-     * The caller isn't a member yet, so [ChecklistAccessService.requireAccess] can't check this.
+     * The caller isn't a member yet, so [com.mychecklist.checklist.ChecklistAccessService.requireAccess] can't check this.
      */
     @Transactional
     fun addOrRestore(checklistId: UUID, userId: UUID, role: MemberRole): ChecklistMember {

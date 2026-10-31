@@ -1,4 +1,4 @@
-package com.mychecklist.checklist
+package com.mychecklist.member
 
 import com.jayway.jsonpath.JsonPath
 import com.mychecklist.checklist.domain.MemberRole

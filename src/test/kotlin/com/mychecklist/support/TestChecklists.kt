@@ -1,7 +1,7 @@
 package com.mychecklist.support
 
 import com.jayway.jsonpath.JsonPath
-import com.mychecklist.checklist.MemberService
+import com.mychecklist.member.MemberService
 import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.user.data.UserRepository
 import org.springframework.boot.test.context.TestComponent

@@ -1,4 +1,4 @@
-package com.mychecklist.checklist
+package com.mychecklist.member
 
 import com.mychecklist.checklist.data.ChecklistMemberRepository
 import com.mychecklist.checklist.domain.ChecklistMemberId
