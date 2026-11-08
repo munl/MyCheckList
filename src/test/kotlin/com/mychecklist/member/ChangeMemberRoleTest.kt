@@ -5,6 +5,8 @@ import com.mychecklist.admin.data.AdminAuditLogRepository
 import com.mychecklist.checklist.data.ChecklistMemberRepository
 import com.mychecklist.checklist.domain.ChecklistMemberId
 import com.mychecklist.checklist.domain.MemberRole
+import com.mychecklist.common.error.NotFoundException
+import com.mychecklist.member.api.MemberResponse
 import com.mychecklist.support.SUPER_ADMIN_EMAIL
 import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
@@ -27,8 +29,13 @@ import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
+import java.sql.Connection
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -56,6 +63,7 @@ class ChangeMemberRoleTest @Autowired constructor(
     private val memberRepo: ChecklistMemberRepository,
     private val users: UserRepository,
     private val transactions: PlatformTransactionManager,
+    private val dataSource: DataSource,
 ) {
 
     // --- helpers ------------------------------------------------------------
@@ -420,6 +428,68 @@ class ChangeMemberRoleTest @Autowired constructor(
         assertEquals("VIEWER", row["role"])
         assertEquals(5, row["star_balance"], "the other request's stars must survive the role change")
         assertEquals(2, row["current_streak"])
+    }
+
+    /**
+     * Runs a role change that overlaps with another request's write, step by step: another
+     * connection locks the target's row, the role change runs until its UPDATE waits on that lock,
+     * then [otherWrite] runs and commits. The role change carries on with the row as it is now.
+     */
+    private fun roleChangeRacing(
+        listId: UUID, caller: RequestPostProcessor, targetId: UUID, role: MemberRole,
+        otherWrite: (Connection) -> Unit,
+    ): Result<MemberResponse> {
+        val callerUser = users.findById(checklists.userId(caller)).get()
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            dataSource.connection.use { other ->
+                other.autoCommit = false
+                other.prepareStatement(
+                    "SELECT 1 FROM checklist_members WHERE checklist_id = ? AND user_id = ? FOR UPDATE",
+                ).use { it.setObject(1, listId); it.setObject(2, targetId); it.executeQuery() }
+
+                val change = executor.submit<Result<MemberResponse>> {
+                    runCatching { memberService.changeRole(callerUser, listId, targetId, role) }
+                }
+                waitUntilRoleUpdateIsBlocked()
+                otherWrite(other)
+                other.commit()
+                return change.get(10, TimeUnit.SECONDS)
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    private fun waitUntilRoleUpdateIsBlocked() {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (System.nanoTime() < deadline) {
+            val waiting = jdbc.queryForObject(
+                "SELECT count(*) FROM pg_stat_activity " +
+                    "WHERE wait_event_type = 'Lock' AND query LIKE 'UPDATE checklist_members SET role%'",
+                Long::class.java,
+            )
+            if (waiting == 1L) return
+            Thread.sleep(20)
+        }
+        error("the role change never reached its UPDATE")
+    }
+
+    @Test
+    fun `if the list is deleted while the role is changing, the change gets 404, not a 500`() {
+        val owner = signedIn("owner")
+        val id = checklists.createList(owner)
+        val sam = signedIn("Sam")
+        checklists.addMember(id, sam, MemberRole.EDITOR)
+        val samId = checklists.userId(sam)
+
+        val result = roleChangeRacing(id, owner, samId, MemberRole.VIEWER) { other ->
+            other.prepareStatement("DELETE FROM checklists WHERE id = ?").use { it.setObject(1, id); it.executeUpdate() }
+        }
+
+        val error = result.exceptionOrNull()
+        assertIs<NotFoundException>(error, "got $error")
+        assertEquals("Member not found", error.message)
     }
 
     // --- super admin --------------------------------------------------------

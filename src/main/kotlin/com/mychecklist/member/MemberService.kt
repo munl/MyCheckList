@@ -68,14 +68,17 @@ class MemberService(
         if (oldRole != role) {
             // A targeted update, not `target.role = role`: saving the entity would write back the
             // whole row as it was read, undoing a leave or star change made in the meantime.
-            val updated = members.updateRole(checklistId, targetUserId, role.name)
-            // Reload just this row (new role, and anyone else's latest changes).
-            entityManager.refresh(target)
-            if (updated == 0) {
-                // They left, were removed or became the owner after we read them.
-                if (target.removedAt != null) throw NotFoundException("Member not found")
+            if (members.updateRole(checklistId, targetUserId, role.name) == 0) {
+                // They left, were removed (or the list deleted), or became the owner after we read
+                // them. Read the row fresh: `refresh` would throw if it's gone, and a lookup would
+                // return the stale copy this transaction already holds.
+                entityManager.detach(target)
+                val now = members.findByIdOrNull(target.id)
+                if (now == null || now.removedAt != null) throw NotFoundException("Member not found")
                 throw ConflictException("The owner's role can't be changed. Transfer ownership instead.")
             }
+            // Reload just this row (new role, and anyone else's latest changes).
+            entityManager.refresh(target)
             access.auditIfAdmin(granted, user, "CHANGE_MEMBER_ROLE", "userId=$targetUserId, from=$oldRole, to=$role")
         }
         // Only the owner and super admins get here, and both see emails.
