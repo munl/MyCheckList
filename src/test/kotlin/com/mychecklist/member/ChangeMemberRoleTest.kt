@@ -2,12 +2,15 @@ package com.mychecklist.member
 
 import com.jayway.jsonpath.JsonPath
 import com.mychecklist.admin.data.AdminAuditLogRepository
+import com.mychecklist.checklist.data.ChecklistMemberRepository
+import com.mychecklist.checklist.domain.ChecklistMemberId
 import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.support.SUPER_ADMIN_EMAIL
 import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
 import com.mychecklist.support.signedIn
 import com.mychecklist.support.superAdmin
+import com.mychecklist.user.data.UserRepository
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -22,6 +25,8 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.RequestPostProcessor
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -47,6 +52,10 @@ class ChangeMemberRoleTest @Autowired constructor(
     private val checklists: TestChecklists,
     private val jdbc: JdbcTemplate,
     private val auditLog: AdminAuditLogRepository,
+    private val memberService: MemberService,
+    private val memberRepo: ChecklistMemberRepository,
+    private val users: UserRepository,
+    private val transactions: PlatformTransactionManager,
 ) {
 
     // --- helpers ------------------------------------------------------------
@@ -380,6 +389,37 @@ class ChangeMemberRoleTest @Autowired constructor(
         archive(id, owner)
 
         changeRole(id, signedIn("stranger"), owner, "VIEWER").andExpect { status { isConflict() } }
+    }
+
+    // --- changes made at the same moment (PR #23 review) ---------------------
+
+    @Test
+    fun `a role change only writes the role, so it can't undo a change someone else just made to the row`() {
+        val owner = signedIn("owner")
+        val id = checklists.createList(owner)
+        val sam = signedIn("Sam")
+        checklists.addMember(id, sam, MemberRole.EDITOR)
+        val samId = checklists.userId(sam)
+        val ownerUser = users.findById(checklists.userId(owner)).get()
+
+        TransactionTemplate(transactions).executeWithoutResult {
+            // This request has already read Sam's row (stars 0)...
+            memberRepo.findById(ChecklistMemberId(id, samId)).get()
+            // ...when another request saves Sam's new stars.
+            jdbc.update(
+                "UPDATE checklist_members SET star_balance = 5, current_streak = 2 WHERE checklist_id = ? AND user_id = ?",
+                id, samId,
+            )
+            memberService.changeRole(ownerUser, id, samId, MemberRole.VIEWER)
+        }
+
+        val row = jdbc.queryForMap(
+            "SELECT role, star_balance, current_streak FROM checklist_members WHERE checklist_id = ? AND user_id = ?",
+            id, samId,
+        )
+        assertEquals("VIEWER", row["role"])
+        assertEquals(5, row["star_balance"], "the other request's stars must survive the role change")
+        assertEquals(2, row["current_streak"])
     }
 
     // --- super admin --------------------------------------------------------
