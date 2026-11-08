@@ -43,4 +43,22 @@ interface ChecklistMemberRepository : JpaRepository<ChecklistMember, ChecklistMe
         @Param("userId") userId: UUID,
         @Param("role") role: String,
     ): Int
+
+    /**
+     * Sets an active, non-owner member's role, and nothing else. Saving the entity would write
+     * the whole row back, undoing a leave or star change another request made in the meantime.
+     * Returns 0 if the member was removed or became the owner since they were read.
+     * Use `MemberService.changeRole`, not this directly. Refresh the member entity afterwards.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(
+        value = "UPDATE checklist_members SET role = :role " +
+            "WHERE checklist_id = :checklistId AND user_id = :userId AND removed_at IS NULL AND role <> 'OWNER'",
+        nativeQuery = true,
+    )
+    fun updateRole(
+        @Param("checklistId") checklistId: UUID,
+        @Param("userId") userId: UUID,
+        @Param("role") role: String,
+    ): Int
 }
