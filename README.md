@@ -6,7 +6,7 @@ The backend for a shared checklist app. Users sign in with Google through Fireba
 
 **Progress, decisions and next steps:** [docs/PROGRESS.md](docs/PROGRESS.md)
 
-**Status:** Firebase auth, the permission layer and the checklists API are done. The Members API has started: removed members lose access, and rejoin with their stars and streaks. The schema includes repeating lists, stars, streaks and rewards; their APIs are next, after the rest of members and invitations.
+**Status:** Firebase auth, the permission layer and the checklists API are done. The Members API has started: removed members lose access and rejoin with their stars and streaks, members can be listed, and the owner can change a member's role. The schema includes repeating lists, stars, streaks and rewards; their APIs are next, after the rest of members and invitations.
 
 ---
 
@@ -142,6 +142,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/admin/users   #
 | `POST /api/checklists/{id}/archive` · `/unarchive` | owner | Archived lists are read-only |
 | `DELETE /api/checklists/{id}?confirm=true` | owner | Permanent |
 | `GET /api/checklists/{id}/members` | viewer+ | Active members, the owner first. Emails only for the owner and super admins |
+| `PATCH /api/checklists/{id}/members/{userId}` | owner | `role`: `EDITOR` or `VIEWER`. Returns the updated member. The owner's role can't be changed (409) |
 
 Errors come back as [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) JSON (`status`, `title`, `detail`). If you aren't a member of a list, you get **404**, the same as for a list that doesn't exist. If your role is too low, you get **403**.
 
