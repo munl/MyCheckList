@@ -2,8 +2,15 @@ package com.mychecklist.member.api
 
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.mychecklist.checklist.domain.MemberRole
+import jakarta.validation.constraints.NotNull
 import java.time.Instant
 import java.util.UUID
+
+/** Only exactly "EDITOR" or "VIEWER"; anything else (missing, null, lowercase, OWNER) is a 400. */
+data class ChangeRoleRequest(
+    @field:NotNull
+    val role: MemberRole?,
+)
 
 data class MemberResponse(
     val userId: UUID,

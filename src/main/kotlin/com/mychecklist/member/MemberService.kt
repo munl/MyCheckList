@@ -6,6 +6,7 @@ import com.mychecklist.checklist.data.ChecklistRepository
 import com.mychecklist.checklist.domain.ChecklistMember
 import com.mychecklist.checklist.domain.ChecklistMemberId
 import com.mychecklist.checklist.domain.MemberRole
+import com.mychecklist.common.error.BadRequestException
 import com.mychecklist.common.error.ConflictException
 import com.mychecklist.common.error.NotFoundException
 import com.mychecklist.member.api.MemberResponse
@@ -42,21 +43,47 @@ class MemberService(
             .sortedWith(
                 compareBy<ChecklistMember>({ it.role != MemberRole.OWNER }, { it.joinedAt }, { it.id.userId.toString() }),
             )
-            .map { member ->
-                val profile = profiles.getValue(member.id.userId)
-                MemberResponse(
-                    userId = member.id.userId,
-                    displayName = profile.displayName,
-                    photoUrl = profile.photoUrl,
-                    email = profile.email.takeIf { showEmails },
-                    role = member.role,
-                    joinedAt = member.joinedAt,
-                    starBalance = member.starBalance,
-                    currentStreak = member.currentStreak,
-                    longestStreak = member.longestStreak,
-                )
-            }
+            .map { member -> member.toResponse(profiles.getValue(member.id.userId), showEmail = showEmails) }
     }
+
+    /**
+     * Owners (and super admins) switch a member between EDITOR and VIEWER. Asking for OWNER is
+     * a 400, checked before permissions like the rest of the body: ownership only moves by transfer.
+     * The target must be an active member (404) and not the owner (409). Setting the role they
+     * already have changes nothing and isn't audited.
+     */
+    @Transactional
+    fun changeRole(user: User, checklistId: UUID, targetUserId: UUID, role: MemberRole): MemberResponse {
+        if (role == MemberRole.OWNER) {
+            throw BadRequestException("Ownership can only be moved by a transfer")
+        }
+        val granted = access.requireAccess(checklistId, user, MemberRole.OWNER)
+        val target = members.findByIdAndRemovedAtIsNull(ChecklistMemberId(checklistId, targetUserId))
+            ?: throw NotFoundException("Member not found")
+        if (target.role == MemberRole.OWNER) {
+            throw ConflictException("The owner's role can't be changed. Transfer ownership instead.")
+        }
+
+        val oldRole = target.role
+        if (oldRole != role) {
+            target.role = role
+            access.auditIfAdmin(granted, user, "CHANGE_MEMBER_ROLE", "userId=$targetUserId, from=$oldRole, to=$role")
+        }
+        // Only the owner and super admins get here, and both see emails.
+        return target.toResponse(users.findByIdOrNull(targetUserId)!!, showEmail = true)
+    }
+
+    private fun ChecklistMember.toResponse(profile: User, showEmail: Boolean) = MemberResponse(
+        userId = id.userId,
+        displayName = profile.displayName,
+        photoUrl = profile.photoUrl,
+        email = profile.email.takeIf { showEmail },
+        role = role,
+        joinedAt = joinedAt,
+        starBalance = starBalance,
+        currentStreak = currentStreak,
+        longestStreak = longestStreak,
+    )
 
     /**
      * Adds someone to a list. If they were a member before (soft removed), their old row is

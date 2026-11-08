@@ -8,7 +8,6 @@ import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
 import com.mychecklist.support.signedIn
 import com.mychecklist.support.superAdmin
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -40,7 +39,6 @@ import kotlin.test.assertTrue
  *    with details `userId=<member>, from=<old>, to=<new>`
  * Order when several apply: body (400), caller (404, 403), archived (409), then target (404, 409).
  */
-@Disabled("Waiting on #5")
 @SpringBootTest(properties = ["app.super-admin-emails=$SUPER_ADMIN_EMAIL"])
 @AutoConfigureMockMvc
 @Import(TestcontainersConfig::class, TestChecklists::class)
