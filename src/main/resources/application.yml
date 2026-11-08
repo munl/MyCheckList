@@ -13,6 +13,14 @@ spring:
     problemdetails:
       enabled: true  # standard Spring errors also come back as RFC 7807 JSON
 
+  jackson:
+    datatype:
+      enum:
+        # Enums only by name. By default Jackson also takes a number (or "1") as the enum's
+        # position, so {"role": 1} would quietly mean EDITOR. Found in the PR #23 review.
+        # (Jackson 3 moved this from DeserializationFeature to EnumFeature.)
+        fail-on-numbers-for-enums: true
+
   jpa:
     open-in-view: false
     hibernate:

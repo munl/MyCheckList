@@ -208,8 +208,8 @@ class ChangeMemberRoleTest @Autowired constructor(
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["{}", """{"role": null}""", """{"role": "ADMIN"}""", """{"role": "editor"}""", """{"role": ""}"""])
-    fun `a missing, null, unknown or lowercase role gets 400`(body: String) {
+    @ValueSource(strings = ["{}", """{"role": null}""", """{"role": "ADMIN"}""", """{"role": "editor"}""", """{"role": ""}""", """{"role": 1}""", """{"role": "1"}""", """{"role": 0}"""])
+    fun `a missing, null, unknown, lowercase or numeric role gets 400`(body: String) {
         val owner = signedIn("owner")
         val id = checklists.createList(owner)
         val viewer = signedIn("viewer")
