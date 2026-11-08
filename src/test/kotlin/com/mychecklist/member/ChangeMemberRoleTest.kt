@@ -5,6 +5,7 @@ import com.mychecklist.admin.data.AdminAuditLogRepository
 import com.mychecklist.checklist.data.ChecklistMemberRepository
 import com.mychecklist.checklist.domain.ChecklistMemberId
 import com.mychecklist.checklist.domain.MemberRole
+import com.mychecklist.common.error.ConflictException
 import com.mychecklist.common.error.NotFoundException
 import com.mychecklist.member.api.MemberResponse
 import com.mychecklist.support.SUPER_ADMIN_EMAIL
@@ -490,6 +491,54 @@ class ChangeMemberRoleTest @Autowired constructor(
         val error = result.exceptionOrNull()
         assertIs<NotFoundException>(error, "got $error")
         assertEquals("Member not found", error.message)
+    }
+
+    @Test
+    fun `if the target leaves while the role is changing, the change gets 404 and they stay removed`() {
+        val owner = signedIn("owner")
+        val id = checklists.createList(owner)
+        val sam = signedIn("Sam")
+        checklists.addMember(id, sam, MemberRole.EDITOR)
+        val samId = checklists.userId(sam)
+
+        // Sam leaves (as #9 will) while the role change runs.
+        val result = roleChangeRacing(id, owner, samId, MemberRole.VIEWER) { other ->
+            other.prepareStatement("UPDATE checklist_members SET removed_at = now() WHERE checklist_id = ? AND user_id = ?").use {
+                it.setObject(1, id); it.setObject(2, samId); it.executeUpdate()
+            }
+        }
+
+        val error = result.exceptionOrNull()
+        assertIs<NotFoundException>(error, "got $error")
+        assertEquals("Member not found", error.message)
+        assertEquals("EDITOR", storedRole(id, sam))
+        val stillRemoved = jdbc.queryForObject(
+            "SELECT removed_at IS NOT NULL FROM checklist_members WHERE checklist_id = ? AND user_id = ?",
+            Boolean::class.java, id, samId,
+        )
+        assertEquals(true, stillRemoved)
+    }
+
+    @Test
+    fun `if the target becomes the owner while the role is changing, the change gets 409 and they stay owner`() {
+        val owner = signedIn("owner")
+        val id = checklists.createList(owner)
+        val sam = signedIn("Sam")
+        checklists.addMember(id, sam, MemberRole.EDITOR)
+        val samId = checklists.userId(sam)
+        val ownerId = checklists.userId(owner)
+
+        // Another request transfers ownership to Sam (as #13 will) while the role change runs.
+        val result = roleChangeRacing(id, owner, samId, MemberRole.VIEWER) { other ->
+            listOf(ownerId to "EDITOR", samId to "OWNER").forEach { (userId, newRole) ->
+                other.prepareStatement("UPDATE checklist_members SET role = ? WHERE checklist_id = ? AND user_id = ?").use {
+                    it.setString(1, newRole); it.setObject(2, id); it.setObject(3, userId); it.executeUpdate()
+                }
+            }
+        }
+
+        assertIs<ConflictException>(result.exceptionOrNull(), "got ${result.exceptionOrNull()}")
+        assertEquals("OWNER", storedRole(id, sam))
     }
 
     // --- super admin --------------------------------------------------------
