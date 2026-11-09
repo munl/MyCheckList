@@ -135,7 +135,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/admin/users   #
 | `GET /actuator/health` | public | Kubernetes probes use `/liveness` and `/readiness` |
 | `GET /api/me` | any user | Creates your user row on first call |
 | `GET /api/admin/users` | super admin | |
-| `POST /api/checklists` | any user | Creates a list; you become OWNER. Body: `title`, `description?`, `timeZone?` (IANA, e.g. `America/Vancouver`; default `UTC`) |
+| `POST /api/checklists` | any user except super admins (403) | Creates a list; you become OWNER. Body: `title`, `description?`, `timeZone?` (IANA, e.g. `America/Vancouver`; default `UTC`) |
 | `GET /api/checklists[?archived=true]` | any user | Lists you're a member of |
 | `GET /api/checklists/{id}` | viewer+ | |
 | `PATCH /api/checklists/{id}` | editor+ | `title`, `description`, `timeZone` |
@@ -151,8 +151,9 @@ Errors come back as [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) JSON (`st
 ```
 src/main/kotlin/com/mychecklist/
 ├── MyChecklistApplication.kt
-├── config/          SecurityConfig (Firebase JWT), AppProperties, WebConfig
-├── common/error/    ApiExceptions, ApiExceptionHandler (RFC 7807 errors)
+├── config/          SecurityConfig (Firebase JWT), AppProperties, WebConfig, ClockConfig
+├── common/          EmailMasking (maskEmail, for logs)
+│   └── error/       ApiExceptions, ApiExceptionHandler (RFC 7807 errors)
 ├── user/            UserService (token → user row), @CurrentUser
 │   ├── api/         MeController, UserResponse
 │   ├── domain/      User, PlatformRole
