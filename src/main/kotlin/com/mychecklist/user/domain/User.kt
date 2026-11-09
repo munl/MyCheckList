@@ -13,6 +13,9 @@ import org.hibernate.annotations.UpdateTimestamp
 import java.time.Instant
 import java.util.UUID
 
+/** The 403 message when a super admin would become a member of a list. */
+const val SUPER_ADMINS_NOT_ON_LISTS = "Super admins can't own or join lists"
+
 @Entity
 @Table(name = "users")
 class User(

@@ -8,9 +8,11 @@ import com.mychecklist.checklist.domain.ChecklistMemberId
 import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.common.error.BadRequestException
 import com.mychecklist.common.error.ConflictException
+import com.mychecklist.common.error.ForbiddenException
 import com.mychecklist.common.error.NotFoundException
 import com.mychecklist.member.api.MemberResponse
 import com.mychecklist.user.data.UserRepository
+import com.mychecklist.user.domain.SUPER_ADMINS_NOT_ON_LISTS
 import com.mychecklist.user.domain.User
 import jakarta.persistence.EntityManager
 import org.springframework.data.repository.findByIdOrNull
@@ -106,12 +108,14 @@ class MemberService(
      * an active member is left as they are: their role only changes through the members API.
      *
      * Owners can't be added this way; they only come from creating a list or a transfer.
+     * Super admins can't be added at all (403): they oversee lists without being members.
      * Nobody can join an archived list (409), and a list that doesn't exist gives 404.
      * The caller isn't a member yet, so [com.mychecklist.checklist.ChecklistAccessService.requireAccess] can't check this.
      */
     @Transactional
     fun addOrRestore(checklistId: UUID, userId: UUID, role: MemberRole): ChecklistMember {
         require(role != MemberRole.OWNER) { "Owners come from creating a list or a transfer, not from joining" }
+        if (users.findByIdOrNull(userId)?.isSuperAdmin == true) throw ForbiddenException(SUPER_ADMINS_NOT_ON_LISTS)
         val checklist = checklists.findByIdOrNull(checklistId) ?: throw NotFoundException("Checklist not found")
         if (checklist.archivedAt != null) {
             throw ConflictException("This checklist is archived. Unarchive it to make changes.")

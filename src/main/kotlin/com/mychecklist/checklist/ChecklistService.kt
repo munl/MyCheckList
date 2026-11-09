@@ -11,6 +11,8 @@ import com.mychecklist.checklist.domain.ChecklistMemberId
 import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.common.error.BadRequestException
 import com.mychecklist.common.error.ConflictException
+import com.mychecklist.common.error.ForbiddenException
+import com.mychecklist.user.domain.SUPER_ADMINS_NOT_ON_LISTS
 import com.mychecklist.user.domain.User
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -33,6 +35,8 @@ class ChecklistService(
 
     @Transactional
     fun create(user: User, request: CreateChecklistRequest): ChecklistResponse {
+        // They oversee lists; creating one would make them its owner.
+        if (user.isSuperAdmin) throw ForbiddenException(SUPER_ADMINS_NOT_ON_LISTS)
         if (members.countByIdUserIdAndRoleAndRemovedAtIsNull(user.id!!, MemberRole.OWNER) >= MAX_OWNED_CHECKLISTS) {
             throw ConflictException("You can own at most $MAX_OWNED_CHECKLISTS checklists")
         }
