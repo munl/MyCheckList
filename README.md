@@ -6,7 +6,7 @@ The backend for a shared checklist app. Users sign in with Google through Fireba
 
 **Progress, decisions and next steps:** [docs/PROGRESS.md](docs/PROGRESS.md)
 
-**Status:** Firebase auth, the permission layer and the checklists API are done. The Members API has started: removed members lose access and rejoin with their stars and streaks, members can be listed, the owner can change a member's role or remove a member, and members can leave a list. The schema includes repeating lists, stars, streaks and rewards; their APIs are next, after the rest of members and invitations.
+**Status:** Firebase auth, the permission layer and the checklists API are done. The Members API has started: removed members lose access and rejoin with their stars and streaks, members can be listed, the owner can change a member's role or remove a member, and members can leave a list (their assignments and pending reward requests are cleaned up). The schema includes repeating lists, stars, streaks and rewards; their APIs are next, after the rest of members and invitations.
 
 ---
 
@@ -143,7 +143,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/admin/users   #
 | `DELETE /api/checklists/{id}?confirm=true` | owner | Permanent |
 | `GET /api/checklists/{id}/members` | viewer+ | Active members, the owner first. Emails only for the owner and super admins |
 | `PATCH /api/checklists/{id}/members/{userId}` | owner | `role`: `EDITOR` or `VIEWER`. Returns the updated member. The owner's role can't be changed (409) |
-| `DELETE /api/checklists/{id}/members/{userId}` | owner | Removes an editor or viewer (204). They keep their stars if they rejoin. The owner can't be removed (409) |
+| `DELETE /api/checklists/{id}/members/{userId}` | owner | Removes an editor or viewer (204). They're unassigned from unfinished items and their pending reward requests are refunded; they keep their stars if they rejoin. The owner can't be removed (409) |
 | `POST /api/checklists/{id}/leave` | editor, viewer | Leaves the list (204), archived lists too. The owner must transfer ownership first (409) |
 
 Errors come back as [RFC 7807](https://www.rfc-editor.org/rfc/rfc7807) JSON (`status`, `title`, `detail`). If you aren't a member of a list, you get **404**, the same as for a list that doesn't exist. If your role is too low, you get **403**.
