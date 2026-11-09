@@ -6,7 +6,6 @@ import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
 import com.mychecklist.support.signedIn
 import com.mychecklist.support.superAdmin
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
@@ -42,7 +41,6 @@ import kotlin.test.assertTrue
  *  - nothing else (other members, other lists) changes, and a removal that fails cleans up nothing
  * Items, days and rewards have no API yet, so the data is set up with SQL.
  */
-@Disabled("Waiting on #11")
 @SpringBootTest(properties = ["app.super-admin-emails=$SUPER_ADMIN_EMAIL"])
 @AutoConfigureMockMvc
 @Import(TestcontainersConfig::class, TestChecklists::class)
