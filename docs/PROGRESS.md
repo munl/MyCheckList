@@ -288,7 +288,7 @@ Docker Desktop must be running for all of these. Kubernetes is only needed for t
 
 # Day-to-day development
 docker compose up -d db
-export APP_SUPER_ADMIN_EMAILS=you@gmail.com   # optional
+export APP_SUPER_ADMIN_EMAILS=admin@example.com   # optional; ONLY emails that will never use the app
 ./gradlew bootRun
 
 # Everything in Docker

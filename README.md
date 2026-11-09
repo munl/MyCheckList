@@ -85,14 +85,14 @@ The server doesn't need a Firebase service account. It checks each Firebase ID t
 
 ```bash
 docker compose up -d db                       # start Postgres
-export APP_SUPER_ADMIN_EMAILS=you@gmail.com   # optional: makes you super admin
+export APP_SUPER_ADMIN_EMAILS=admin@example.com   # optional: see "Super admin" below first
 ./gradlew bootRun                             # or run MyChecklistApplication in IntelliJ
 ```
 
 ## Run locally: option B (everything in Docker)
 
 ```bash
-APP_SUPER_ADMIN_EMAILS=you@gmail.com docker compose up --build
+APP_SUPER_ADMIN_EMAILS=admin@example.com docker compose up --build   # optional: see "Super admin" below first
 ```
 
 ## Run locally: option C (Kubernetes, Docker Desktop)
@@ -193,6 +193,9 @@ Every feature uses the same layout:
 ## Super admin
 
 Super admin status is controlled by the `APP_SUPER_ADMIN_EMAILS` setting, a comma-separated list. On every sign-in, a user whose **verified** email is on that list becomes `SUPER_ADMIN`, and everyone else becomes `USER`. Nobody can grant the role through the API.
+
+> **⚠️ NOTE: ONLY use emails that will NEVER use the checklist app.**
+> Super admins are separate overseer accounts (for a web dashboard planned for later). They can't create, own or join lists. Never put your own everyday email in this setting. If an email in the setting still belongs to someone on a list, they stay `USER` until they've left every list, and a warning is logged.
 
 To edit the database directly, connect any Postgres client (TablePlus, DBeaver, IntelliJ's Database tool) to `localhost:5432`, database, user and password all set to `mychecklist`. On Kubernetes, first run `kubectl -n mychecklist port-forward svc/postgres 5432:5432`.
 
