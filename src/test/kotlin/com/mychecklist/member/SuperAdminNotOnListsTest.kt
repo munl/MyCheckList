@@ -7,6 +7,7 @@ import com.mychecklist.checklist.domain.MemberRole
 import com.mychecklist.common.error.ForbiddenException
 import com.mychecklist.support.SUPER_ADMIN_EMAIL
 import com.mychecklist.support.TestChecklists
+import com.mychecklist.support.TestClock
 import com.mychecklist.support.TestcontainersConfig
 import com.mychecklist.support.signedIn
 import com.mychecklist.support.superAdmin
@@ -16,10 +17,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
+import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
+import org.springframework.context.annotation.Primary
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.oauth2.jwt.Jwt
@@ -27,6 +31,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.RequestPostProcessor
+import java.time.Duration
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -38,6 +43,7 @@ private const val PENDING_EMAIL = "pending@admins.test"
 private const val PENDING_JOINS_EMAIL = "pending-joins@admins.test"
 private const val LEFT_EMAIL = "left@admins.test"
 private const val FORMER_EMAIL = "former@admins.test"
+private const val REPEAT_EMAIL = "repeat@admins.test"
 
 /**
  * Super admins are overseers with their own accounts, never members of a list (#20/#21).
@@ -48,10 +54,10 @@ private const val FORMER_EMAIL = "former@admins.test"
  * normally until they've left every list (decided 2026-11-08).
  */
 @SpringBootTest(
-    properties = ["app.super-admin-emails=$SUPER_ADMIN_EMAIL,$PENDING_EMAIL,$PENDING_JOINS_EMAIL,$LEFT_EMAIL,$FORMER_EMAIL"],
+    properties = ["app.super-admin-emails=$SUPER_ADMIN_EMAIL,$PENDING_EMAIL,$PENDING_JOINS_EMAIL,$LEFT_EMAIL,$FORMER_EMAIL,$REPEAT_EMAIL"],
 )
 @AutoConfigureMockMvc
-@Import(TestcontainersConfig::class, TestChecklists::class)
+@Import(TestcontainersConfig::class, TestChecklists::class, SuperAdminNotOnListsTest.Clocks::class)
 @ExtendWith(OutputCaptureExtension::class)
 class SuperAdminNotOnListsTest @Autowired constructor(
     private val mvc: MockMvc,
@@ -60,7 +66,15 @@ class SuperAdminNotOnListsTest @Autowired constructor(
     private val members: ChecklistMemberRepository,
     private val userService: UserService,
     private val jdbc: JdbcTemplate,
+    private val clock: TestClock,
 ) {
+
+    @TestConfiguration
+    class Clocks {
+        @Bean
+        @Primary
+        fun testClock() = TestClock()
+    }
 
     private fun admin(email: String): RequestPostProcessor = signedIn("admin", email = email, uid = "uid-$email")
 
@@ -168,6 +182,24 @@ class SuperAdminNotOnListsTest @Autowired constructor(
         markRemoved(id, leftId) // only a removed row is left
 
         assertEquals("SUPER_ADMIN", platformRole(admin(LEFT_EMAIL)))
+    }
+
+    @Test
+    fun `the warning is logged at most once a day per person`(output: CapturedOutput) {
+        val id = checklists.createList(signedIn("owner"))
+        memberBeforePromotion(REPEAT_EMAIL, id)
+        val repeat = admin(REPEAT_EMAIL)
+        fun warnings() = output.out.split("r***@admins.test").size - 1
+
+        platformRole(repeat)
+        platformRole(repeat)
+        clock.advance(Duration.ofHours(23))
+        platformRole(repeat)
+        assertEquals(1, warnings(), "once within a day")
+
+        clock.advance(Duration.ofHours(1))
+        platformRole(repeat)
+        assertEquals(2, warnings(), "again after 24 hours")
     }
 
     // --- super admins still oversee every list ----------------------------------
