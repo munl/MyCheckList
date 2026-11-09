@@ -6,6 +6,7 @@ import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
 import com.mychecklist.support.signedIn
 import com.mychecklist.support.superAdmin
+import com.mychecklist.user.data.UserRepository
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
@@ -20,6 +21,9 @@ import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 import java.time.LocalDate
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -48,6 +52,9 @@ class RemovalCleanupTest @Autowired constructor(
     private val mvc: MockMvc,
     private val checklists: TestChecklists,
     private val jdbc: JdbcTemplate,
+    private val memberService: MemberService,
+    private val users: UserRepository,
+    private val dataSource: DataSource,
 ) {
 
     /** The two ways someone stops being a member. */
@@ -304,6 +311,49 @@ class RemovalCleanupTest @Autowired constructor(
 
         assertEquals(setOf(s.samId), templateAssignees(otherTemplate))
         assertEquals(setOf(s.samId), dayItemAssignees(otherDayItem))
+    }
+
+    @Test
+    fun `a tick that's saving while they're removed keeps them on the finished item (PR #33 review)`() {
+        val s = Setup()
+        val item = dayItem(s.listId, day(s.listId, today, open = true), null, s.samId)
+        val ownerUser = users.findById(s.ownerId).get()
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            dataSource.connection.use { tick ->
+                // Sam's tick has updated the item but not saved yet...
+                tick.autoCommit = false
+                tick.prepareStatement(
+                    "UPDATE occurrence_items SET completed_at = now(), completed_by = ? WHERE id = ? AND completed_at IS NULL",
+                ).use { it.setObject(1, s.samId); it.setObject(2, item); it.executeUpdate() }
+
+                // ...when the owner removes him.
+                val removal = executor.submit { memberService.remove(ownerUser, s.listId, s.samId) }
+                waitUntilBlockedOrDone { removal.isDone }
+                tick.commit()
+                removal.get(10, TimeUnit.SECONDS)
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        val finished = jdbc.queryForObject("SELECT completed_at IS NOT NULL FROM occurrence_items WHERE id = ?", Boolean::class.java, item)
+        assertEquals(true, finished)
+        assertEquals(setOf(s.samId), dayItemAssignees(item), "the finished item still shows who did it")
+    }
+
+    /** Waits until a statement is waiting on a row lock, or [done] (it never had to wait). */
+    private fun waitUntilBlockedOrDone(done: () -> Boolean) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (System.nanoTime() < deadline) {
+            if (done()) return
+            val waiting = jdbc.queryForObject(
+                "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'", Long::class.java,
+            )
+            if (waiting!! > 0) return
+            Thread.sleep(20)
+        }
+        error("the removal neither finished nor waited on a lock")
     }
 
     // =========================================================================
