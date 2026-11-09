@@ -342,6 +342,35 @@ class RemovalCleanupTest @Autowired constructor(
         assertEquals(setOf(s.samId), dayItemAssignees(item), "the finished item still shows who did it")
     }
 
+    @Test
+    fun `an untick that's saving while they're removed leaves the item unassigned (PR #33 re-review)`() {
+        val s = Setup()
+        val item = dayItem(s.listId, day(s.listId, today, open = true), s.samId, s.samId)
+        val ownerUser = users.findById(s.ownerId).get()
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            dataSource.connection.use { untick ->
+                // Someone's untick of Sam's finished item has updated it but not saved yet...
+                untick.autoCommit = false
+                untick.prepareStatement(
+                    "UPDATE occurrence_items SET completed_at = NULL, completed_by = NULL WHERE id = ?",
+                ).use { it.setObject(1, item); it.executeUpdate() }
+
+                // ...when the owner removes him.
+                val removal = executor.submit { memberService.remove(ownerUser, s.listId, s.samId) }
+                waitUntilBlockedOrDone { removal.isDone }
+                untick.commit()
+                removal.get(10, TimeUnit.SECONDS)
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        val finished = jdbc.queryForObject("SELECT completed_at IS NOT NULL FROM occurrence_items WHERE id = ?", Boolean::class.java, item)
+        assertEquals(false, finished)
+        assertEquals(emptySet(), dayItemAssignees(item), "an unfinished item on an open day doesn't keep a removed member")
+    }
+
     /** Waits until a statement is waiting on a row lock, or [done] (it never had to wait). */
     private fun waitUntilBlockedOrDone(done: () -> Boolean) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
