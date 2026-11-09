@@ -3,12 +3,14 @@ package com.mychecklist.member
 import com.jayway.jsonpath.JsonPath
 import com.mychecklist.admin.data.AdminAuditLogRepository
 import com.mychecklist.checklist.domain.MemberRole
+import com.mychecklist.common.error.NotFoundException
 import com.mychecklist.support.SUPER_ADMIN_EMAIL
 import com.mychecklist.support.TestChecklists
 import com.mychecklist.support.TestcontainersConfig
 import com.mychecklist.support.signedIn
 import com.mychecklist.support.superAdmin
 import com.mychecklist.user.UserService
+import com.mychecklist.user.data.UserRepository
 import com.mychecklist.user.domain.PlatformRole
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -23,7 +25,11 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -61,6 +67,8 @@ class RemoveAndLeaveTest @Autowired constructor(
     private val auditLog: AdminAuditLogRepository,
     private val memberService: MemberService,
     private val userService: UserService,
+    private val users: UserRepository,
+    private val dataSource: DataSource,
 ) {
 
     // --- helpers ------------------------------------------------------------
@@ -558,6 +566,91 @@ class RemoveAndLeaveTest @Autowired constructor(
         leave(id, editor).andExpect { status { isNoContent() } }
 
         assertTrue(auditRowsFor(id).isEmpty())
+    }
+
+    // --- a remove or leave at the same moment as another leave (PR #31 review) --
+
+    /**
+     * Runs [action] (a remove or leave of [targetId]) overlapping with another request's leave,
+     * step by step: another connection locks the target's row, [action] runs until its UPDATE
+     * waits on that lock, then the other leave saves (with a fixed removal time) and commits.
+     */
+    private fun racingAnotherLeave(listId: UUID, targetId: UUID, action: () -> Unit): Result<Unit> {
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            dataSource.connection.use { other ->
+                other.autoCommit = false
+                other.prepareStatement(
+                    "SELECT 1 FROM checklist_members WHERE checklist_id = ? AND user_id = ? FOR UPDATE",
+                ).use { it.setObject(1, listId); it.setObject(2, targetId); it.executeQuery() }
+
+                val running = executor.submit<Result<Unit>> { runCatching(action) }
+                waitUntilRemoveUpdateIsBlocked()
+                other.prepareStatement(
+                    "UPDATE checklist_members SET removed_at = '2026-10-01T00:00:00Z' WHERE checklist_id = ? AND user_id = ?",
+                ).use { it.setObject(1, listId); it.setObject(2, targetId); it.executeUpdate() }
+                other.commit()
+                return running.get(10, TimeUnit.SECONDS)
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    private fun waitUntilRemoveUpdateIsBlocked() {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (System.nanoTime() < deadline) {
+            val waiting = jdbc.queryForObject(
+                "SELECT count(*) FROM pg_stat_activity " +
+                    "WHERE wait_event_type = 'Lock' AND query LIKE 'UPDATE checklist_members SET removed_at%'",
+                Long::class.java,
+            )
+            if (waiting == 1L) return
+            Thread.sleep(20)
+        }
+        error("the remove or leave never reached its UPDATE")
+    }
+
+    /** The other leave's removal time is kept: the later request didn't write over it. */
+    private fun assertRemovedByTheOtherLeave(listId: UUID, targetId: UUID) {
+        val kept = jdbc.queryForObject(
+            "SELECT removed_at = '2026-10-01T00:00:00Z' FROM checklist_members WHERE checklist_id = ? AND user_id = ?",
+            Boolean::class.java, listId, targetId,
+        )
+        assertEquals(true, kept)
+    }
+
+    @Test
+    fun `if the member leaves while the owner is removing them, the remove gets 404`() {
+        val owner = signedIn("owner")
+        val id = checklists.createList(owner)
+        val ana = signedIn("Ana")
+        checklists.addMember(id, ana, MemberRole.EDITOR)
+        val anaId = checklists.userId(ana)
+        val ownerUser = users.findById(checklists.userId(owner)).get()
+
+        val result = racingAnotherLeave(id, anaId) { memberService.remove(ownerUser, id, anaId) }
+
+        val error = result.exceptionOrNull()
+        assertIs<NotFoundException>(error, "got $error")
+        assertEquals("Member not found", error.message)
+        assertRemovedByTheOtherLeave(id, anaId)
+    }
+
+    @Test
+    fun `if the member's leave runs twice at the same moment, the second gets 404`() {
+        val id = checklists.createList(signedIn("owner"))
+        val ana = signedIn("Ana")
+        checklists.addMember(id, ana, MemberRole.VIEWER)
+        val anaId = checklists.userId(ana)
+        val anaUser = users.findById(anaId).get()
+
+        val result = racingAnotherLeave(id, anaId) { memberService.leave(anaUser, id) }
+
+        val error = result.exceptionOrNull()
+        assertIs<NotFoundException>(error, "got $error")
+        assertEquals("Member not found", error.message)
+        assertRemovedByTheOtherLeave(id, anaId)
     }
 
     // --- leaving your last list as someone waiting to be a super admin (#20/#21) --
