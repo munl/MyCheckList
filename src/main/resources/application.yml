@@ -42,6 +42,8 @@ app:
   firebase-project-id: ${FIREBASE_PROJECT_ID:mychecklist-e745d}
   # Comma-separated. Accounts with these (verified) emails become SUPER_ADMIN on sign-in;
   # everyone else is USER. This setting is the source of truth for the role.
+  # ***NOTE*** ONLY use emails that will NEVER use the checklist app. Super admins are separate overseer
+  # accounts and can't own or join lists. Never put your own everyday email here.
   super-admin-emails: ${APP_SUPER_ADMIN_EMAILS:}
   history:
     # Days to keep full item-level detail of past occurrences. Older days are compacted

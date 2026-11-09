@@ -28,6 +28,7 @@ services:
       DB_USERNAME: mychecklist
       DB_PASSWORD: mychecklist
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-mychecklist-e745d}
+      # ***NOTE*** ONLY use emails that will NEVER use the checklist app (super admins can't own or join lists).
       APP_SUPER_ADMIN_EMAILS: ${APP_SUPER_ADMIN_EMAILS:-}
     ports:
       - "8080:8080"

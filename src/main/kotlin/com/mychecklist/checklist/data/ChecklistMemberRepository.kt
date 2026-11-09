@@ -22,6 +22,9 @@ interface ChecklistMemberRepository : JpaRepository<ChecklistMember, ChecklistMe
     /** All of one user's memberships (to show their role on each list). */
     fun findByIdUserIdAndRemovedAtIsNull(userId: UUID): List<ChecklistMember>
 
+    /** Whether the user is an active member of any list (removed rows don't count). */
+    fun existsByIdUserIdAndRemovedAtIsNull(userId: UUID): Boolean
+
     fun countByIdUserIdAndRoleAndRemovedAtIsNull(userId: UUID, role: MemberRole): Long
 
     /**
