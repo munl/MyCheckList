@@ -64,4 +64,21 @@ interface ChecklistMemberRepository : JpaRepository<ChecklistMember, ChecklistMe
         @Param("userId") userId: UUID,
         @Param("role") role: String,
     ): Int
+
+    /**
+     * Marks an active, non-owner member removed (sets `removed_at`), and nothing else: the row
+     * keeps its stars and streaks. A targeted update for the same reason as [updateRole].
+     * Returns 0 if they were already removed or became the owner since they were read.
+     * Use `MemberService.remove` or `MemberService.leave`, not this directly.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(
+        value = "UPDATE checklist_members SET removed_at = now() " +
+            "WHERE checklist_id = :checklistId AND user_id = :userId AND removed_at IS NULL AND role <> 'OWNER'",
+        nativeQuery = true,
+    )
+    fun markRemoved(
+        @Param("checklistId") checklistId: UUID,
+        @Param("userId") userId: UUID,
+    ): Int
 }

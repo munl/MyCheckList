@@ -10,7 +10,6 @@ import com.mychecklist.support.signedIn
 import com.mychecklist.support.superAdmin
 import com.mychecklist.user.UserService
 import com.mychecklist.user.domain.PlatformRole
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -50,7 +49,6 @@ private const val LEAVES_ONE_OF_TWO_EMAIL = "leaves-one-of-two@admins.test"
  *    SUPER_ADMIN on their next request (#20/#21)
  * Order when several apply: caller (404, 403), archived (409), then target (404, 409).
  */
-@Disabled("Waiting on #9")
 @SpringBootTest(
     properties = ["app.super-admin-emails=$SUPER_ADMIN_EMAIL,$LEAVES_LAST_EMAIL,$LEAVES_ARCHIVED_EMAIL,$LEAVES_ONE_OF_TWO_EMAIL"],
 )

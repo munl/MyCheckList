@@ -20,6 +20,9 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
+private const val OWNER_CANT_BE_REMOVED = "The owner can't be removed. Transfer ownership instead."
+private const val OWNER_CANT_LEAVE = "The owner can't leave. Transfer ownership first."
+
 @Service
 class MemberService(
     private val checklists: ChecklistRepository,
@@ -85,6 +88,50 @@ class MemberService(
         }
         // Only the owner and super admins get here, and both see emails.
         return target.toResponse(users.findByIdOrNull(targetUserId)!!, showEmail = true)
+    }
+
+    /**
+     * Owners (and super admins) remove an editor or viewer. Only `removed_at` is set: the row
+     * keeps its stars and streaks, so a rejoin brings them back. Not on archived lists (409).
+     * The target must be an active member (404) and not the owner (409). A super admin's
+     * removal is audited as REMOVE_MEMBER.
+     */
+    @Transactional
+    fun remove(user: User, checklistId: UUID, targetUserId: UUID) {
+        val granted = access.requireAccess(checklistId, user, MemberRole.OWNER)
+        val target = members.findByIdAndRemovedAtIsNull(ChecklistMemberId(checklistId, targetUserId))
+            ?: throw NotFoundException("Member not found")
+        val role = target.role
+        markRemoved(target, ownerMessage = OWNER_CANT_BE_REMOVED)
+        access.auditIfAdmin(granted, user, "REMOVE_MEMBER", "userId=$targetUserId, role=$role")
+    }
+
+    /**
+     * An editor or viewer leaves a list, archived or not. Like [remove], only `removed_at` is set.
+     * The owner must transfer ownership first (409). A super admin is never a member, so gets 404.
+     * Never audited.
+     */
+    @Transactional
+    fun leave(user: User, checklistId: UUID) {
+        access.requireAccess(checklistId, user, MemberRole.VIEWER, allowArchived = true)
+        val me = members.findByIdAndRemovedAtIsNull(ChecklistMemberId(checklistId, user.id!!))
+            ?: throw NotFoundException("Member not found")
+        markRemoved(me, ownerMessage = OWNER_CANT_LEAVE)
+    }
+
+    /** Sets `removed_at` on [member] with a targeted update; 409 with [ownerMessage] for the owner. */
+    private fun markRemoved(member: ChecklistMember, ownerMessage: String) {
+        if (member.role == MemberRole.OWNER) throw ConflictException(ownerMessage)
+        if (members.markRemoved(member.id.checklistId, member.id.userId) == 0) {
+            // They left, were removed (or the list deleted), or became the owner after we read
+            // them. Read the row fresh, as in changeRole.
+            entityManager.detach(member)
+            val now = members.findByIdOrNull(member.id)
+            if (now == null || now.removedAt != null) throw NotFoundException("Member not found")
+            throw ConflictException(ownerMessage)
+        }
+        // The entity this transaction holds is now out of date; drop it.
+        entityManager.detach(member)
     }
 
     private fun ChecklistMember.toResponse(profile: User, showEmail: Boolean) = MemberResponse(
