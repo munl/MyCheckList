@@ -10,7 +10,10 @@ import com.mychecklist.common.error.BadRequestException
 import com.mychecklist.common.error.ConflictException
 import com.mychecklist.common.error.ForbiddenException
 import com.mychecklist.common.error.NotFoundException
+import com.mychecklist.item.data.ItemAssigneeRepository
 import com.mychecklist.member.api.MemberResponse
+import com.mychecklist.occurrence.data.OccurrenceItemAssigneeRepository
+import com.mychecklist.reward.data.RewardRedemptionRepository
 import com.mychecklist.user.data.UserRepository
 import com.mychecklist.user.domain.SUPER_ADMINS_NOT_ON_LISTS
 import com.mychecklist.user.domain.User
@@ -30,6 +33,9 @@ class MemberService(
     private val users: UserRepository,
     private val access: ChecklistAccessService,
     private val entityManager: EntityManager,
+    private val itemAssignees: ItemAssigneeRepository,
+    private val dayItemAssignees: OccurrenceItemAssigneeRepository,
+    private val redemptions: RewardRedemptionRepository,
 ) {
 
     /**
@@ -94,7 +100,7 @@ class MemberService(
      * Owners (and super admins) remove an editor or viewer. Only `removed_at` is set: the row
      * keeps its stars and streaks, so a rejoin brings them back. Not on archived lists (409).
      * The target must be an active member (404) and not the owner (409). A super admin's
-     * removal is audited as REMOVE_MEMBER.
+     * removal is audited as REMOVE_MEMBER. Their data is cleaned up as in [cleanUpAfterRemoval].
      */
     @Transactional
     fun remove(user: User, checklistId: UUID, targetUserId: UUID) {
@@ -103,13 +109,14 @@ class MemberService(
             ?: throw NotFoundException("Member not found")
         val role = target.role
         markRemoved(target, ownerMessage = OWNER_CANT_BE_REMOVED)
+        cleanUpAfterRemoval(checklistId, targetUserId, causedBy = user, refundReason = "Member removed")
         access.auditIfAdmin(granted, user, "REMOVE_MEMBER", "userId=$targetUserId, role=$role")
     }
 
     /**
      * An editor or viewer leaves a list, archived or not. Like [remove], only `removed_at` is set.
      * The owner must transfer ownership first (409). A super admin is never a member, so gets 404.
-     * Never audited.
+     * Never audited. Their data is cleaned up as in [cleanUpAfterRemoval].
      */
     @Transactional
     fun leave(user: User, checklistId: UUID) {
@@ -117,6 +124,23 @@ class MemberService(
         val me = members.findByIdAndRemovedAtIsNull(ChecklistMemberId(checklistId, user.id!!))
             ?: throw NotFoundException("Member not found")
         markRemoved(me, ownerMessage = OWNER_CANT_LEAVE)
+        cleanUpAfterRemoval(checklistId, user.id!!, causedBy = user, refundReason = "Left the list")
+    }
+
+    /**
+     * What happens to someone's data on a list once they're removed or leave (#10/#11), in the
+     * same transaction, so a failed removal cleans up nothing:
+     *  - they're unassigned from the template items, and from unfinished items on every OPEN day
+     *    (finished items and closed days keep them: that's history)
+     *  - their PENDING reward requests are cancelled and refunded, decided by [causedBy]
+     * Stars they already earned (today included), approved and rejected requests and their
+     * member results are kept. Runs after [markRemoved], whose UPDATE holds their member row,
+     * so a second removal of the same person waits and then gets 404 instead of running this twice.
+     */
+    private fun cleanUpAfterRemoval(checklistId: UUID, userId: UUID, causedBy: User, refundReason: String) {
+        itemAssignees.deleteForMember(checklistId, userId)
+        dayItemAssignees.deleteUnfinishedOnOpenDays(checklistId, userId)
+        redemptions.cancelPendingAndRefund(checklistId, userId, causedBy.id!!, refundReason)
     }
 
     /** Sets `removed_at` on [member] with a targeted update; 409 with [ownerMessage] for the owner. */
